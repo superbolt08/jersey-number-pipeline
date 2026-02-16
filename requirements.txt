@@ -1,0 +1,19 @@
+# Jersey number pipeline — main environment (CPU)
+# Install: pip install -r requirements.txt
+# Use with: conda activate jersey (after creating env with conda create -n jersey python=3.8 -y)
+
+# Core (versions match project README)
+torch==1.9.0
+torchvision==0.10.0
+
+# Vision & I/O
+opencv-python
+Pillow
+
+# Data & numerics
+numpy
+pandas
+scipy
+
+# Utilities
+tqdm

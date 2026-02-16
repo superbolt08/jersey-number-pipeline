@@ -13,13 +13,18 @@ import time
 import copy
 import argparse
 import os
+import sys
 import configuration as cfg
 import time
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
 
-from sam.sam import SAM
+# SAM repo is cloned as sam2/ with sam.py inside; make it importable as sam
+_sam_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sam2")
+if os.path.isdir(_sam_dir) and _sam_dir not in sys.path:
+    sys.path.insert(0, _sam_dir)
+from sam import SAM
 
 def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     since = time.time()

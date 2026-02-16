@@ -35,6 +35,30 @@ def get_specs_from_version(model_version):
     conf, weights = str(conf), str(weights)
     return conf, weights
 
+
+def _checkpoint_valid(path):
+    """Raise a clear error if the checkpoint is missing or invalid (e.g. HTML from failed download)."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(
+            f"Centroid-ReID checkpoint not found: {path}\n"
+            "Download the model weights from the pipeline README (Centroid-ReID weights) and place them in reid/centroids-reid/models/"
+        )
+    size = os.path.getsize(path)
+    if size < 1024 * 1024:  # < 1 MB is not a real ResNet50 checkpoint
+        raise ValueError(
+            f"Centroid-ReID checkpoint looks invalid (file too small: {size} bytes): {path}\n"
+            "The file may be an HTML page from a failed Google Drive download.\n"
+            "Re-download the weights from the pipeline README and place the real .ckpt file(s) in reid/centroids-reid/models/"
+        )
+    with open(path, "rb") as f:
+        head = f.read(20)
+    if head.startswith(b"<") or head.startswith(b"{") or head.startswith(b"<!DOCTYPE"):
+        raise ValueError(
+            f"Centroid-ReID checkpoint looks like HTML/text, not a PyTorch file: {path}\n"
+            "Re-download the weights from the pipeline README (Centroid-ReID) and place them in reid/centroids-reid/models/"
+        )
+
+
 def generate_features(input_folder, output_folder, model_version='res50_market'):
     # load model
     CONFIG_FILE, MODEL_FILE = get_specs_from_version(model_version)
@@ -42,6 +66,7 @@ def generate_features(input_folder, output_folder, model_version='res50_market')
     opts = ["MODEL.PRETRAIN_PATH", MODEL_FILE, "MODEL.PRETRAINED", True, "TEST.ONLY_TEST", True, "MODEL.RESUME_TRAINING", False]
     cfg.merge_from_list(opts)
     
+    _checkpoint_valid(cfg.MODEL.PRETRAIN_PATH)
     use_cuda = True if torch.cuda.is_available() and cfg.GPU_IDS else False
     model = CTLModel.load_from_checkpoint(cfg.MODEL.PRETRAIN_PATH, cfg=cfg)
 
@@ -56,8 +81,10 @@ def generate_features(input_folder, output_folder, model_version='res50_market')
     val_transforms = transforms_base.build_transforms(is_train=False)
 
     for track in tqdm(tracks):
-        features = []
         track_path = os.path.join(input_folder, track)
+        if not os.path.isdir(track_path):
+            continue  # skip .DS_Store and other non-directory entries
+        features = []
         images = os.listdir(track_path)
         output_file = os.path.join(output_folder, f"{track}_features.npy")
         for img_path in images:
