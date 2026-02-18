@@ -4,14 +4,18 @@ Google Colab setup and run script for the jersey-number-pipeline.
 
 Usage in Colab:
   1. Runtime -> Change runtime type -> GPU
-  2. Clone the repo and cd into it (or upload this script and run from repo root):
+  2. Either:
+     - PERSIST_TO_DRIVE = True: run this script from any directory (e.g. after uploading it).
+       It will mount Drive, clone the main repo and all sub-repos to Drive, then run.
+     - PERSIST_TO_DRIVE = False: clone the repo and cd into it, then run:
        !git clone https://github.com/superbolt08/jersey-number-pipeline.git
        %cd jersey-number-pipeline
+       !python run_colab.py
   3. Edit the CONFIG below to match your Google Drive paths.
   4. Run: !python run_colab.py
 
-The script will: mount Drive, copy dataset and weights from Drive, clone SAM if needed,
-install dependencies, and run the pipeline (SoccerNet test).
+The script clones the same repos as setup.py: main repo, sam2, reid/centroids-reid,
+pose/ViTPose, str/parseq; copies dataset and weights from Drive; installs deps; runs the pipeline.
 """
 
 import os
@@ -19,16 +23,13 @@ import subprocess
 import sys
 
 # ============== CONFIG: Edit these to match your Google Drive layout ==============
-# After mounting, Drive is at /content/drive/MyDrive (or your shared drive path).
 DRIVE_BASE = "/content/drive/MyDrive"
-# Folder under Drive containing your files (no leading/trailing slash).
 DRIVE_PROJECT_FOLDER = "jersey-number-pipeline"
-# Name of the dataset zip file in that folder (e.g. jersey-2023.zip).
 DATASET_ZIP = "jersey-2023.zip"
-# Subfolder under DRIVE_PROJECT_FOLDER for model weights (reid .ckpt, pose vitpose-h.pth, models/*).
 WEIGHTS_FOLDER = "weights"
-# Set to False to skip mounting (e.g. if you already mounted in a previous cell).
 MOUNT_DRIVE = True
+# True = clone main repo + sub-repos to Drive (persistent). False = run from current dir (must be repo root).
+PERSIST_TO_DRIVE = True
 # ==================================================================================
 
 
@@ -42,10 +43,6 @@ def run(cmd, check=True, shell=True, cwd=None):
 
 
 def main():
-    repo_root = os.path.dirname(os.path.abspath(__file__))
-    os.chdir(repo_root)
-    print(f"Working directory: {repo_root}")
-
     # 1. Mount Google Drive
     if MOUNT_DRIVE:
         try:
@@ -61,14 +58,52 @@ def main():
     drive_zip = os.path.join(drive_project, DATASET_ZIP)
     drive_weights = os.path.join(drive_project, WEIGHTS_FOLDER)
 
-    # 2. Clone SAM into sam2 if missing
+    # 2. Repo root: either on Drive (persistent) or current script directory
+    if PERSIST_TO_DRIVE:
+        os.makedirs(drive_project, exist_ok=True)
+        repo_root = os.path.join(drive_project, "jersey-number-pipeline")
+        if not os.path.isdir(os.path.join(repo_root, ".git")):
+            print("Cloning main repo to Drive ...")
+            run(f'cd "{drive_project}" && git clone https://github.com/superbolt08/jersey-number-pipeline.git')
+        else:
+            print("Main repo already on Drive, skipping clone.")
+    else:
+        repo_root = os.path.dirname(os.path.abspath(__file__))
+
+    os.chdir(repo_root)
+    print(f"Working directory: {repo_root}")
+
+    # 3. Clone sub-repos (same as setup.py): sam2, reid/centroids-reid, pose/ViTPose, str/parseq
     if not os.path.isdir(os.path.join(repo_root, "sam2")):
         print("Cloning SAM into sam2/ ...")
-        run("git clone https://github.com/davda54/sam.git sam2", cwd=repo_root)
-    else:
-        print("sam2/ already present, skipping clone.")
+        run("git clone --recurse-submodules https://github.com/davda54/sam.git sam2", cwd=repo_root)
 
-    # 3. Dataset: copy zip from Drive and unzip
+    os.makedirs(os.path.join(repo_root, "reid"), exist_ok=True)
+    if not os.path.isdir(os.path.join(repo_root, "reid", "centroids-reid")):
+        print("Cloning Centroid-ReID into reid/centroids-reid/ ...")
+        run(
+            "git clone --recurse-submodules https://github.com/mikwieczorek/centroids-reid.git reid/centroids-reid",
+            cwd=repo_root,
+        )
+        os.makedirs(os.path.join(repo_root, "reid", "centroids-reid", "models"), exist_ok=True)
+
+    os.makedirs(os.path.join(repo_root, "pose"), exist_ok=True)
+    if not os.path.isdir(os.path.join(repo_root, "pose", "ViTPose")):
+        print("Cloning ViTPose into pose/ViTPose/ ...")
+        run(
+            "git clone --recurse-submodules https://github.com/ViTAE-Transformer/ViTPose.git pose/ViTPose",
+            cwd=repo_root,
+        )
+
+    os.makedirs(os.path.join(repo_root, "str"), exist_ok=True)
+    if not os.path.isdir(os.path.join(repo_root, "str", "parseq")):
+        print("Cloning PARSeq into str/parseq/ ...")
+        run(
+            "git clone --recurse-submodules https://github.com/baudm/parseq.git str/parseq",
+            cwd=repo_root,
+        )
+
+    # 4. Dataset: copy zip from Drive and unzip
     os.makedirs(os.path.join(repo_root, "data", "SoccerNet"), exist_ok=True)
     if os.path.isfile(drive_zip):
         run(f'cp "{drive_zip}" "{repo_root}/"', cwd=repo_root)
@@ -83,7 +118,7 @@ def main():
     else:
         print(f"Dataset zip not found at {drive_zip}. Please upload it to Drive or set CONFIG.")
 
-    # 4. Weights: copy from Drive into repo
+    # 5. Weights: copy from Drive into repo
     if os.path.isdir(drive_weights):
         models_dst = os.path.join(repo_root, "models")
         reid_dst = os.path.join(repo_root, "reid", "centroids-reid", "models")
@@ -102,17 +137,23 @@ def main():
     else:
         print(f"Weights folder not found at {drive_weights}. Copy weights manually or set CONFIG.")
 
-    # 5. Install dependencies (no version pin so Colab gets a valid torch)
+    # 6. Install dependencies (no version pin so Colab gets a valid torch)
     print("Installing dependencies...")
     run(
         "pip install -q torch torchvision opencv-python Pillow numpy pandas scipy tqdm pytorch-lightning yacs",
         cwd=repo_root,
     )
 
-    # 6. Run the pipeline
+    # 7. Run the pipeline
     print("Running pipeline: python main.py SoccerNet test")
     run("python main.py SoccerNet test", cwd=repo_root)
     print("Done. Outputs are in out/SoccerNetResults/")
+
+    # 8. Copy outputs to Drive so they persist
+    out_dir = os.path.join(repo_root, "out")
+    if os.path.isdir(out_dir) and os.path.isdir(drive_project):
+        run(f'cp -r "{out_dir}" "{drive_project}/"', cwd=repo_root)
+        print("Outputs copied to Drive.")
 
 
 if __name__ == "__main__":
