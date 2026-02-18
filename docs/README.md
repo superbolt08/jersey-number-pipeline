@@ -8,6 +8,8 @@ This repository ([superbolt08/jersey-number-pipeline](https://github.com/superbo
 
 ## Table of contents
 
+- [Option A: Run the Colab script (easiest)](#option-a-run-the-colab-script-easiest)
+- [Option B: Run steps manually](#option-b-run-steps-manually)
 - [Prerequisites (Google Drive)](#prerequisites-google-drive)
 - [1. Open Colab and enable GPU](#1-open-colab-and-enable-gpu)
 - [2. Clone this repo and the SAM sub-repo](#2-clone-this-repo-and-the-sam-sub-repo)
@@ -19,6 +21,33 @@ This repository ([superbolt08/jersey-number-pipeline](https://github.com/superbo
 - [Getting results out of Colab](#getting-results-out-of-colab)
 - [Running locally (alternative)](#running-locally-alternative)
 - [Appendix: Dataset and weights](#appendix-dataset-and-weights)
+
+---
+
+## Option A: Run the Colab notebook (easiest)
+
+The repo includes a notebook **`run_colab.ipynb`** that runs setup and the pipeline in Colab.
+
+1. **Open the notebook in Colab:**  
+   - Either clone the repo, then in Colab use **File → Open notebook** and open `run_colab.ipynb` from the cloned folder, or  
+   - Upload `run_colab.ipynb` to Colab (e.g. drag-and-drop), or  
+   - From Colab: run the first code cell below to clone the repo, then open **`jersey-number-pipeline/run_colab.ipynb`** from the file browser.
+
+2. **Runtime → Change runtime type → GPU** (e.g. T4).
+
+3. Edit the **CONFIG** cell (cell 2) to match your Google Drive paths: `DRIVE_PROJECT_FOLDER`, `DATASET_ZIP`, `WEIGHTS_FOLDER`.
+
+4. **Run All** (Runtime → Run all) or run the cells in order.
+
+The notebook will: mount Drive (and prompt for auth if needed), clone the repo and SAM, copy the dataset zip and unzip it, copy weights from Drive, install dependencies, and run `main.py SoccerNet test`. Outputs appear in `out/SoccerNetResults/`. A final optional cell copies `out/` to Drive.
+
+**Required on Drive:** Put your dataset zip (e.g. `jersey-2023.zip`) and a `weights` folder (with `models/`, `reid/`, `pose/` subfolders and the required `.pth`/`.ckpt` files) inside a project folder (e.g. `My Drive/jersey-number-pipeline/`). See [Prerequisites (Google Drive)](#prerequisites-google-drive).
+
+---
+
+## Option B: Run steps manually
+
+If you prefer to run each step yourself (e.g. different paths or no Drive), follow the sections below.
 
 ---
 
