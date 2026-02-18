@@ -1,270 +1,256 @@
-# Jersey Number Pipeline — Setup Guide (CPU-only)
+# Jersey Number Pipeline — Setup Guide
 
-This guide walks through setting up the jersey-number-pipeline for **CPU-only** use (e.g. on a laptop without an NVIDIA GPU). The **same code** uses the GPU when one is available (e.g. on Google Colab or a machine with CUDA), so you do not need to change anything when moving to a GPU environment.
+**Primary way to run:** on **Google Colab** using its GPU. This guide is written for Colab first: all main steps are commands you run inside Colab cells. Running locally with conda is described at the end as an alternative.
+
+This repository ([superbolt08/jersey-number-pipeline](https://github.com/superbolt08/jersey-number-pipeline)) contains the pipeline code and PARSeq (`str/parseq`). You must also clone the SAM repo into `sam2/`, and provide the dataset and model weights (e.g. from Google Drive).
+
+---
 
 ## Table of contents
 
-- [1. Create a conda environment](#1-create-a-conda-environment)
-- [2. Install base dependencies](#2-install-base-dependencies)
-- [3. Clone the repository](#3-clone-the-repository)
-- [4. Place the dataset](#4-place-the-dataset)
-- [5. Run the setup script](#5-run-the-setup-script)
-- [6. Download required model weights](#6-download-required-model-weights)
-- [7. Install dependencies in auxiliary environments (CPU-only)](#7-install-dependencies-in-auxiliary-environments-cpu-only)
-- [8. Run inference](#8-run-inference)
-- [Running on Google Colab (GPU)](#running-on-google-colab-gpu)
-- [Final directory structure](#final-directory-structure)
-- [Appendix](#appendix)
-  - [Installing conda](#installing-conda)
-  - [Installing dataset](#installing-dataset)
-- [Why these files were changed](#why-these-files-were-changed)
+- [Prerequisites (Google Drive)](#prerequisites-google-drive)
+- [1. Open Colab and enable GPU](#1-open-colab-and-enable-gpu)
+- [2. Clone this repo and the SAM sub-repo](#2-clone-this-repo-and-the-sam-sub-repo)
+- [3. Mount Google Drive and bring in the dataset](#3-mount-google-drive-and-bring-in-the-dataset)
+- [4. Model weights](#4-model-weights)
+- [5. Install dependencies](#5-install-dependencies)
+- [6. Run the pipeline](#6-run-the-pipeline)
+- [Expected directory layout in Colab](#expected-directory-layout-in-colab)
+- [Getting results out of Colab](#getting-results-out-of-colab)
+- [Running locally (alternative)](#running-locally-alternative)
+- [Appendix: Dataset and weights](#appendix-dataset-and-weights)
 
 ---
 
-## 1. Create a conda environment
+## Prerequisites (Google Drive)
 
-```bash
-conda create -n jersey python=3.8 -y
-conda activate jersey
+Before running in Colab, prepare the following and put them on **Google Drive** (paths below are examples; adjust in the Colab cells to match your Drive layout):
+
+1. **SoccerNet jersey-2023 dataset**  
+   - Zip the folder that contains `train/` and `test/` (each with `images/` and labels as per SoccerNet).  
+   - Upload the zip to Drive, e.g. `My Drive/jersey-number-pipeline/jersey-2023.zip`.
+
+2. **Model weights** (see [Appendix: Dataset and weights](#appendix-dataset-and-weights) for links):  
+   - Centroid-ReID weights → e.g. put in a folder `My Drive/jersey-number-pipeline/weights/reid/` (the `.ckpt` files).  
+   - ViTPose weights → e.g. `My Drive/jersey-number-pipeline/weights/pose/vitpose-h.pth`.  
+   - PARSeq (SoccerNet) and legibility (SoccerNet) → e.g. `My Drive/jersey-number-pipeline/weights/models/` (the `.ckpt` and `.pth` files for the pipeline’s `models/` directory).
+
+You will mount Drive in Colab and copy these into the cloned repo (see below).
+
+---
+
+## 1. Open Colab and enable GPU
+
+1. Go to [Google Colab](https://colab.research.google.com).
+2. **File → New notebook**.
+3. **Runtime → Change runtime type**:
+   - **Hardware accelerator:** **GPU** (e.g. T4).
+4. Click **Save**.
+
+---
+
+## 2. Clone this repo and the SAM sub-repo
+
+Run these in Colab cells (one cell per block is fine):
+
+```python
+# Clone the pipeline repo
+!git clone https://github.com/superbolt08/jersey-number-pipeline.git
+%cd jersey-number-pipeline
 ```
 
-> Use `conda activate jersey` every time you open this project.
-
-If you don't have conda installed, see [Installing conda](#installing-conda) below.
-
----
-
-## 2. Install base dependencies
-
-**PyTorch 1.9.0 (CPU):**
-
-```bash
-pip install torch==1.9.0 torchvision==0.10.0
-```
-
-**OpenCV:**
-
-```bash
-pip install opencv-python
+```python
+# Clone SAM (required for legibility step). Must be in a folder named sam2.
+!git clone https://github.com/davda54/sam.git sam2
 ```
 
 ---
 
-## 3. Clone the repository
+## 3. Mount Google Drive and bring in the dataset
 
-From your COSC419 project folder:
+Mount Drive so the notebook can read your files:
 
-```bash
-git clone https://github.com/mkoshkina/jersey-number-pipeline.git
-cd jersey-number-pipeline
+```python
+from google.colab import drive
+drive.mount('/content/drive')
+```
+
+Create the data directory and copy the dataset from Drive. If your zip is at `My Drive/jersey-number-pipeline/jersey-2023.zip`:
+
+```python
+%cd /content/jersey-number-pipeline
+!mkdir -p data/SoccerNet
+# Copy the zip from Drive (change the path to match your Drive folder)
+!cp "/content/drive/MyDrive/jersey-number-pipeline/jersey-2023.zip" ./
+!unzip -q jersey-2023.zip -d data/SoccerNet
+```
+
+If the zip expands to a folder named `jersey-2023`, you should now have `data/SoccerNet/jersey-2023/` with `train/` and `test/` inside. If your zip expands to `train/` and `test/` at the top level, move them into `jersey-2023`:
+
+```python
+# Only if unzip created data/SoccerNet/train and data/SoccerNet/test directly:
+# !mkdir -p data/SoccerNet/jersey-2023
+# !mv data/SoccerNet/train data/SoccerNet/jersey-2023/
+# !mv data/SoccerNet/test data/SoccerNet/jersey-2023/
+```
+
+Verify the layout (pipeline expects `data/SoccerNet/jersey-2023/test/images`, etc.):
+
+```python
+!ls data/SoccerNet/jersey-2023/
+!ls data/SoccerNet/jersey-2023/test/ | head -5
 ```
 
 ---
 
-## 4. Place the dataset
+## 4. Model weights
 
-Ensure the dataset is under:
+Copy the required weights from Drive into the paths the pipeline expects. Adjust the Drive paths to where you uploaded them.
 
-```
-jersey-number-pipeline/
-└── data/
-    └── SoccerNet/
-        ├── train/
-        └── test/
-```
+```python
+%cd /content/jersey-number-pipeline
 
-If you don't have the dataset yet, see [Installing dataset](#installing-dataset) below.
+# Pipeline models/ (PARSeq SoccerNet + legibility SoccerNet)
+!mkdir -p models
+!cp "/content/drive/MyDrive/jersey-number-pipeline/weights/models/"* models/ 2>/dev/null || true
+# Or copy files one by one if you prefer, e.g.:
+# !cp "/content/drive/MyDrive/jersey-number-pipeline/weights/models/parseq_epoch=24-step=....ckpt" models/
+# !cp "/content/drive/MyDrive/jersey-number-pipeline/weights/models/legibility_resnet34_soccer_20240215.pth" models/
 
----
+# Re-ID weights (reid/centroids-reid/models/)
+!mkdir -p reid/centroids-reid/models
+!cp "/content/drive/MyDrive/jersey-number-pipeline/weights/reid/"* reid/centroids-reid/models/ 2>/dev/null || true
 
-## 5. Run the setup script
-
-1. Replace the project's `setup.py` with the `setup.py` from this folder.
-2. Run:
-
-```bash
-python setup.py SoccerNet
+# ViTPose (pose/ViTPose/checkpoints/)
+!mkdir -p pose/ViTPose/checkpoints
+!cp "/content/drive/MyDrive/jersey-number-pipeline/weights/pose/vitpose-h.pth" pose/ViTPose/checkpoints/ 2>/dev/null || true
 ```
 
-5.1 Replace the listed files in the project with the files in this folder
-configuration.py
-helpers.py
-legibility_classifer.py
-requirements.txt
-setup.py
----
-
-## 6. Download required model weights
-
-You must **manually download** these weights and place them as follows:
-
-| What to download | Put in |
-|------------------|--------|
-| Centroid-ReID weights | `reid/centroids-reid/models/` |
-| ViTPose weights | `pose/ViTPose/checkpoints/` |
-| PARSeq (SoccerNet fine-tuned) | `models/` |
-| Legibility classifier (SoccerNet) | `models/` |
-
-Links and details are in the main pipeline [README](https://github.com/mkoshkina/jersey-number-pipeline). **This step is mandatory.**
+If you prefer to download weights in Colab instead of Drive, use the links in the [Appendix](#appendix-dataset-and-weights) and `gdown` or similar, then place the files into `models/`, `reid/centroids-reid/models/`, and `pose/ViTPose/checkpoints/` as above.
 
 ---
 
-## 7. Install dependencies in auxiliary environments (CPU-only)
+## 5. Install dependencies
 
-The pipeline runs some steps in separate conda envs (`centroids`, `vitpose`, `parseq2`). On a **CPU-only machine**, do **not** use the sub-repos’ `requirements.txt` files—they often pin CUDA builds. Install CPU-only packages instead.
+Colab has no conda. Install everything in the current environment (run from the repo root):
 
-If you see **"Generate features"** then an error like `ModuleNotFoundError: No module named 'numpy'`, install deps in the **centroids** env (CPU only):
-
-```bash
-conda activate centroids
-pip install numpy torch torchvision tqdm opencv-python Pillow
+```python
+%cd /content/jersey-number-pipeline
+# Do not use -r requirements.txt here: it pins torch==1.9.0, which Colab may not have.
+!pip install -q torch torchvision opencv-python Pillow numpy pandas scipy tqdm
 ```
 
-Use the same idea for other envs if you hit similar import errors: activate that env and install the missing packages with CPU PyTorch (no `+cu*` versions).
+For the Re-ID step you may also need `pytorch-lightning` and `yacs`:
 
----
-
-## 8. Run inference
-
-When everything is in place:
-
-```bash
-pip install -r requirements.txt
-python main.py SoccerNet test
+```python
+!pip install -q pytorch-lightning yacs
 ```
 
-This runs the full pipeline:
-
-- Re-ID filtering  
-- Legibility classifier  
-- Pose-guided crop  
-- STR (scene text recognition)  
-- Tracklet consolidation  
+(If you hit missing modules for pose or STR, install them in the same way in a new cell.)
 
 ---
 
-## Running on Google Colab (GPU)
+## 6. Run the pipeline
 
-The pipeline automatically uses the GPU when available. To run on Colab with a GPU:
+From the repo root:
 
-1. **Runtime → Change runtime type → GPU** (e.g. T4).
-2. Clone your repo and install dependencies in one environment (no separate conda envs):
-   ```python
-   !git clone https://github.com/superbolt08/jersey-number-pipeline.git
-   %cd jersey-number-pipeline
-   !pip install -q -r requirements.txt
-   !pip install -q numpy torch torchvision tqdm opencv-python Pillow pandas scipy
-   ```
-3. Put data and model weights in the expected paths (e.g. upload to Drive and mount, or download in the notebook).
-4. Run: `!python main.py SoccerNet test`
+```python
+%cd /content/jersey-number-pipeline
+!python main.py SoccerNet test
+```
 
-Re-ID, pose, and STR steps will use the GPU when it is available. For a full Colab workflow (develop locally, push to GitHub, pull and run on Colab), see your project’s Colab instructions.
+The pipeline will use the GPU automatically. It runs: soccer-ball filter → Re-ID features → outlier filter → legibility → pose → crops → STR → combine → evaluation.
 
 ---
 
-## Final directory structure
+## Expected directory layout in Colab
+
+After the steps above, under `/content/jersey-number-pipeline/` you should have:
 
 ```
 jersey-number-pipeline/
 ├── data/
 │   └── SoccerNet/
+│       └── jersey-2023/
+│           ├── train/
+│           └── test/
 ├── models/
+│   ├── parseq_epoch=24-step=...ckpt
+│   └── legibility_resnet34_soccer_20240215.pth
 ├── pose/
+│   └── ViTPose/
+│       └── checkpoints/
+│           └── vitpose-h.pth
 ├── reid/
-├── sam/
+│   └── centroids-reid/
+│       └── models/
+│           └── (*.ckpt)
+├── sam2/
 ├── str/
-└── main.py
-```
-
-If you see this structure and the commands above work, you're done.
-
----
-
-# Appendix
-
-## Installing conda
-
-### Option 1 — Miniconda (recommended)
-
-**Step 1: Download**
-
-- Go to: [Miniconda — conda documentation](https://docs.conda.io/en/latest/miniconda.html)
-- Download: **Miniconda3 Windows 64-bit** (Python 3.x installer)
-
-**Step 2: Install**
-
-- Run the installer.
-- Choose **"Just Me"**.
-- Use the default install location.
-- **Check "Add Miniconda to PATH"** (important).
-- Finish installation.
-
-**Step 3: Verify**
-
-Open a new PowerShell window and run:
-
-```bash
-conda --version
-```
-
-You should see something like `conda 23.x.x`. If you get "command not found", restart your computer and try again.
-
-**Step 4: Create the project environment**
-
-```bash
-conda create -n jersey python=3.8 -y
-conda activate jersey
+│   └── parseq/
+├── main.py
+└── ...
 ```
 
 ---
 
-## Installing dataset
+## Getting results out of Colab
 
-**Step 1: Install SoccerNet package**
+Outputs are written under `out/SoccerNetResults/` (e.g. `test/final_results.json`). To download to your machine:
 
-```bash
-pip install SoccerNet
+- Use **Files** in the left sidebar to browse to `jersey-number-pipeline/out/`, then right‑click and download, or  
+- Zip and download from a cell:
+
+```python
+!cd /content/jersey-number-pipeline && zip -r out.zip out/
+from google.colab import files
+files.download('out.zip')
 ```
 
-Verify:
+You can also copy `out/` to Drive so it persists after the session:
 
-```bash
-python -c "import SoccerNet; print('OK')"
-```
-
-**Step 2: Download jersey dataset**
-
-From inside `jersey-number-pipeline`:
-
-```bash
-python -c "from SoccerNet.Downloader import SoccerNetDownloader; d=SoccerNetDownloader(LocalDirectory='./data/SoccerNet'); d.downloadDataTask(task='jersey-2023', split=['train','test'])"
-```
-
-This downloads into `jersey-number-pipeline/data/SoccerNet/`.
-
-**Step 3: Resulting layout**
-
-```
-jersey-number-pipeline/
-└── data/
-    └── SoccerNet/
-        ├── train/
-        └── test/
+```python
+!cp -r /content/jersey-number-pipeline/out "/content/drive/MyDrive/jersey-number-pipeline/"
 ```
 
 ---
 
-## Why these files were changed
+## Running locally (alternative)
 
-The files in this `setup-documentation` folder differ from the original pipeline so that setup and inference work on **Windows** and **CPU-only** machines, and with the **SoccerNet jersey-2023** dataset layout. Summary:
+If you want to run on your own machine with conda instead of Colab:
 
-| File | Why it was changed |
-|------|--------------------|
-| **setup.py** | Git clone destination paths are quoted so Windows does not split them into multiple arguments. Directory creation uses `os.makedirs(..., exist_ok=True)` so `pose/ViTPose/checkpoints` and similar paths exist before downloads, and so `./pose`, `./reid`, `./str` exist before listing. |
-| **configuration.py** | `root_dir` for SoccerNet is set to `./data/SoccerNet/jersey-2023` because the SoccerNet downloader puts the task data in that subfolder; the original path expected `./data/SoccerNet/test/...` directly. |
-| **helpers.py** | In `identify_soccer_balls`, entries under the images folder are skipped unless they are directories. This avoids treating macOS `.DS_Store` (or other files) as tracklet folders, which would cause "The directory name is invalid" on Windows. |
-| **legibility_classifier.py** | The SAM repo is cloned as `sam2/` with `sam.py` inside, but the code expected `from sam.sam import SAM`. The script now adds `sam2` to `sys.path` and uses `from sam import SAM` so the import resolves without renaming the clone. |
-| **main.py** | All `conda run -n <env> python3` commands were changed to use `python` instead of `python3`. On Windows this ensures the correct env's interpreter (and its packages) is used; otherwise the re-id, pose, and STR steps could run with the wrong environment and miss modules like `numpy`. |
-| **centroid_reid.py** | Before loading the Re-ID checkpoint, the file is checked (size and first bytes). If it looks like HTML or is too small, a clear error is raised so you re-download the real weights instead of getting a pickle error. Tracklet iteration skips non-directory entries (e.g. `.DS_Store`) so feature extraction does not crash. |
-| **reid/centroids-reid/losses/center_loss.py** | `use_gpu` is effectively set to `use_gpu and torch.cuda.is_available()`. The original code always called `.cuda()` when `use_gpu=True`, which crashes on CPU-only machines; now CUDA is only used when available. |
-| **requirements.txt** | Added for the main pipeline environment so you can install the jersey env's dependencies in one step (`pip install -r requirements.txt`) with CPU-friendly versions of PyTorch and other packages. |
+1. Clone this repo: `git clone https://github.com/superbolt08/jersey-number-pipeline.git && cd jersey-number-pipeline`
+2. Clone SAM into `sam2`: `git clone https://github.com/davda54/sam.git sam2`
+3. Create a conda env (e.g. `conda create -n jersey python=3.8 -y`) and install: `pip install -r requirements.txt` (or install PyTorch/OpenCV etc. manually).
+4. Run the setup script to clone Centroid-ReID and ViTPose and create envs `centroids`, `vitpose`, `parseq2`: `python setup.py SoccerNet`
+5. Download and place the dataset under `data/SoccerNet/jersey-2023/` and all model weights as in the table in the Appendix.
+6. On CPU-only machines, install dependencies in the `centroids` (and other) envs without CUDA pins: e.g. `conda activate centroids && pip install numpy torch torchvision tqdm opencv-python Pillow`.
+7. Run: `conda activate jersey && python main.py SoccerNet test`
+
+The pipeline will use the GPU if available, or CPU otherwise.
+
+---
+
+# Appendix: Dataset and weights
+
+## Dataset
+
+- **SoccerNet jersey-2023:** [SoccerNet jersey](https://github.com/SoccerNet/sn-jersey). You can download via the SoccerNet package (e.g. on your PC or in Colab):
+  ```python
+  pip install SoccerNet
+  python -c "from SoccerNet.Downloader import SoccerNetDownloader; d=SoccerNetDownloader(LocalDirectory='./data/SoccerNet'); d.downloadDataTask(task='jersey-2023', split=['train','test'])"
+  ```
+  Then zip the resulting `data/SoccerNet/jersey-2023` (or the whole `data` folder) and upload to Drive for Colab.
+
+## Model weights (mandatory)
+
+Download and place as below. Links are in the [main README](https://github.com/superbolt08/jersey-number-pipeline) or the [original repo](https://github.com/mkoshkina/jersey-number-pipeline).
+
+| What to download | Put in (relative to repo root) |
+|-------------------|---------------------------------|
+| Centroid-ReID weights | `reid/centroids-reid/models/` |
+| ViTPose (`vitpose-h.pth`) | `pose/ViTPose/checkpoints/` |
+| PARSeq SoccerNet fine-tuned | `models/` |
+| Legibility classifier (SoccerNet) | `models/` |
+
+For Colab, upload these to a folder on Drive (e.g. `weights/reid/`, `weights/pose/`, `weights/models/`) and copy them into the repo as in [Section 4](#4-model-weights).
