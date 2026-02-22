@@ -317,3 +317,58 @@ Download and place as below. Links are in the [main README](https://github.com/s
 | Legibility classifier (SoccerNet) | `models/` |
 
 For Colab, upload these to a folder on Drive (e.g. `weights/reid/`, `weights/pose/`, `weights/models/`) and copy them into the repo as in [Section 4](#4-model-weights).
+
+## Why these files were changed
+
+The files in this `setup-documentation` folder differ from the original pipeline so that setup and inference work on **Windows** and **CPU-only** machines, and with the **SoccerNet jersey-2023** dataset layout. Summary:
+
+| File | Why it was changed |
+|------|--------------------|
+| **setup.py** | Git clone destination paths are quoted so Windows does not split them into multiple arguments. Directory creation uses `os.makedirs(..., exist_ok=True)` so `pose/ViTPose/checkpoints` and similar paths exist before downloads, and so `./pose`, `./reid`, `./str` exist before listing. |
+| **configuration.py** | `root_dir` for SoccerNet is set to `./data/SoccerNet/jersey-2023` because the SoccerNet downloader puts the task data in that subfolder; the original path expected `./data/SoccerNet/test/...` directly. |
+| **helpers.py** | In `identify_soccer_balls`, entries under the images folder are skipped unless they are directories. This avoids treating macOS `.DS_Store` (or other files) as tracklet folders, which would cause "The directory name is invalid" on Windows. **Data paths** in `generate_different_split` and `generate_crops_for_split` use the nested layout: read from `train/train/`, `val/val/`, and `source/{split}/{split}/` (e.g. `train/train/train_gt.txt`, `train/train/images/`). |
+| **number_classifier.py** | **Data paths** use the nested layout: `args.data/train/train/imgs/`, `args.data/val/val/imgs/`, `args.data/test/test/imgs/` (with `train_gt.txt`, `val_gt.txt`, `test_gt.txt` inside each), matching the SoccerNet jersey-2023 nested structure. |
+| **legibility_classifier.py** | The SAM repo is cloned as `sam2/` with `sam.py` inside, but the code expected `from sam.sam import SAM`. The script now adds `sam2` to `sys.path` and uses `from sam import SAM` so the import resolves without renaming the clone. **Data paths** were updated to a nested layout: annotations and images are expected under `{args.data}/train/train/`, `{args.data}/val/val/`, and `{args.data}/test/test/` (e.g. `train/train/train_gt.txt`, `train/train/images/`). This matches the SoccerNet jersey-2023 layout when labels and images sit one level deeper than the split name. |
+| **main.py** | All `conda run -n <env> python3` commands were changed to use `python` instead of `python3`. On Windows this ensures the correct env's interpreter (and its packages) is used; otherwise the re-id, pose, and STR steps could run with the wrong environment and miss modules like `numpy`. |
+| **centroid_reid.py** | Before loading the Re-ID checkpoint, the file is checked (size and first bytes). If it looks like HTML or is too small, a clear error is raised so you re-download the real weights instead of getting a pickle error. Tracklet iteration skips non-directory entries (e.g. `.DS_Store`) so feature extraction does not crash. |
+| **reid/centroids-reid/losses/center_loss.py** | `use_gpu` is effectively set to `use_gpu and torch.cuda.is_available()`. The original code always called `.cuda()` when `use_gpu=True`, which crashes on CPU-only machines; now CUDA is only used when available. |
+| **requirements.txt** | Added for the main pipeline environment so you can install the jersey env's dependencies in one step (`pip install -r requirements.txt`) with CPU-friendly versions of PyTorch and other packages. |
+
+## Nested data layout and annotation format (latest changes)
+
+The following applies when **training or evaluating** the legibility classifier, number classifier, or using **helpers** for splits/crops. All of these scripts now expect the same **nested** layout under the data directory.
+
+### Scripts updated for nested layout
+
+| Script | Paths updated |
+|--------|----------------|
+| **legibility_classifier.py** | `{data}/train/train/train_gt.txt`, `{data}/train/train/images/` (and same for `val/val/`, `test/test/`) |
+| **number_classifier.py** | `{data}/train/train/imgs/` (and `train_gt.txt` inside it); same for `val/val/imgs/`, `test/test/imgs/` |
+| **helpers.py** | `generate_different_split`: reads from `current_directory/train/train/`, `current_directory/val/val/`. `generate_crops_for_split`: reads from `source/{split}/{split}/` (e.g. `source/train/train/train_gt.txt`, `source/train/train/images/`). Writes still go to flat `target_directory/train/`, `target_directory/val/`. |
+
+### Expected directory layout
+
+Under the data root (e.g. `--data` or `current_directory` / `source`):
+
+- **Train:** `train/train/train_gt.txt` and `train/train/images/` (legibility); `train/train/imgs/` and `train/train/imgs/train_gt.txt` (number classifier)
+- **Val:** `val/val/val_gt.txt` and `val/val/images/` (legibility); `val/val/imgs/` and `val/val/imgs/val_gt.txt` (number classifier)
+- **Test:** `test/test/test_gt.txt` and `test/test/images/` (legibility); `test/test/imgs/` and `test/test/imgs/test_gt.txt` (number classifier)
+
+So for SoccerNet with `root_dir = ./data/SoccerNet/jersey-2023`, scripts expect e.g. `./data/SoccerNet/jersey-2023/train/train/train_gt.txt` and `./data/SoccerNet/jersey-2023/train/train/images/`. This matches the case where the dataset has an extra nesting level (e.g. `train/train/` instead of files directly under `train/`).
+
+### Annotation format
+
+Annotations must be **TXT (CSV-style)**, not JSON. The script uses `pd.read_csv(annotations_file)`:
+
+- **Column 0:** image filename (e.g. `frame_0001.jpg`)
+- **Column 1:** label (0 = illegible, 1 = legible)
+
+Example `train_gt.txt`:
+
+```text
+image,label
+frame_0001.jpg,1
+frame_0002.jpg,0
+```
+
+If your data only has `train_gt.json`, convert it to this TXT format and save as `train/train/train_gt.txt` (and similarly for `val/val/val_gt.txt`, `test/test/test_gt.txt`) without moving the image directories.

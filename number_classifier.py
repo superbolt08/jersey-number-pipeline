@@ -221,9 +221,10 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    train_img_dir = os.path.join(args.data, 'train', 'imgs')
-    test_img_dir = os.path.join(args.data, 'test', 'imgs')
-    val_img_dir = os.path.join(args.data, 'val', 'imgs')
+    # Nested layout: args.data/train/train/imgs, etc. (same as legibility_classifier)
+    train_img_dir = os.path.join(args.data, 'train', 'train', 'imgs')
+    test_img_dir = os.path.join(args.data, 'test', 'test', 'imgs')
+    val_img_dir = os.path.join(args.data, 'val', 'val', 'imgs')
 
     annotations_file_train = os.path.join(train_img_dir, 'train_gt.txt')
     annotations_file_val = os.path.join(val_img_dir, 'val_gt.txt')

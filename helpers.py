@@ -704,10 +704,11 @@ def get_track(path):
 
 def generate_different_split(current_directory, target_directory, split_val = 0.3):
     names = ['image', 'label']
-    old_train_gt_path = os.path.join(current_directory, 'train', 'train_gt.txt')
-    old_val_gt_path = os.path.join(current_directory, 'val', 'val_gt.txt')
-    old_train_path = os.path.join(current_directory, 'train', 'images')
-    old_val_path = os.path.join(current_directory, 'val', 'images')
+    # Nested layout: current_directory/train/train/train_gt.txt, etc. (same as legibility_classifier)
+    old_train_gt_path = os.path.join(current_directory, 'train', 'train', 'train_gt.txt')
+    old_val_gt_path = os.path.join(current_directory, 'val', 'val', 'val_gt.txt')
+    old_train_path = os.path.join(current_directory, 'train', 'train', 'images')
+    old_val_path = os.path.join(current_directory, 'val', 'val', 'images')
 
     old_train_gt = pd.read_csv(old_train_gt_path, names=names, header=None)
     old_val_gt = pd.read_csv(old_val_gt_path, names=names, header=None)
@@ -759,9 +760,10 @@ pose_home = 'pose/ViTPose'
 pose_env = 'vitpose'
 def generate_crops_for_split(source, target, split):
     names = ['image', 'label']
-    old_gt_path = os.path.join(source, split, split + '_gt.txt')
+    # Nested layout: source/split/split/split_gt.txt and source/split/split/images
+    old_gt_path = os.path.join(source, split, split, split + '_gt.txt')
     old_gt = pd.read_csv(old_gt_path, names=names, header=None)
-    old_path = os.path.join(source, split,  'images')
+    old_path = os.path.join(source, split, split, 'images')
 
     legibles = old_gt[old_gt['label']==1]
     number_legibles = legibles.shape[0]
