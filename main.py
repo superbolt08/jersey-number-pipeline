@@ -57,7 +57,7 @@ def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'g
 
     return results_dict
 
-def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim', exclude_balls=True):
+def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim', exclude_balls=True, tracklet_ids=None):
     root_dir = config.dataset['SoccerNet']['root_dir']
     image_dir = config.dataset['SoccerNet'][args.part]['images']
     path_to_images = os.path.join(root_dir, image_dir)
@@ -88,7 +88,11 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
                 updated_tracklets.append(track)
         tracklets = updated_tracklets
 
+    if tracklet_ids is not None:
+        kept = set(tracklets)
+        tracklets = [t for t in tracklet_ids if t in kept]
 
+    legibility_scores = {}
     for directory in tqdm(tracklets):
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
@@ -96,7 +100,16 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
         else:
             images = os.listdir(track_dir)
         images_full_path = [os.path.join(track_dir, x) for x in images]
-        track_results = lc.run(images_full_path, config.dataset['SoccerNet']['legibility_model'], arch=config.dataset['SoccerNet']['legibility_model_arch'], threshold=0.5)
+        track_results, track_raw = lc.run(
+            images_full_path,
+            config.dataset['SoccerNet']['legibility_model'],
+            arch=config.dataset['SoccerNet']['legibility_model_arch'],
+            threshold=0.5,
+            return_raw_scores=True,
+        )
+        for p, s in zip(images_full_path, track_raw):
+            legibility_scores[p] = float(s)
+            legibility_scores[os.path.basename(p)] = float(s)
         legible = list(np.nonzero(track_results))[0]
         if len(legible) == 0:
             illegible_tracklets.append(directory)
@@ -104,13 +117,18 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
             legible_images = [images_full_path[i] for i in legible]
             legible_tracklets[directory] = legible_images
 
+    scores_name = config.dataset['SoccerNet'][args.part].get('legibility_scores', 'legibility_scores.json')
+    legibility_scores_path = os.path.join(config.dataset['SoccerNet']['working_dir'], scores_name)
+    with open(legibility_scores_path, 'w') as out_scores:
+        json.dump(legibility_scores, out_scores)
+
     # save results
     json_object = json.dumps(legible_tracklets, indent=4)
     full_legibile_path = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['legible_result'])
     with open(full_legibile_path, "w") as outfile:
         outfile.write(json_object)
 
-    full_illegibile_path = os.path.join(config.dataset['SoccerNet']['working_dir'], config. dataset['SoccerNet'][args.part]['illegible_result'])
+    full_illegibile_path = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['illegible_result'])
     json_object = json.dumps({'illegible': illegible_tracklets}, indent=4)
     with open(full_illegibile_path, "w") as outfile:
         outfile.write(json_object)
@@ -261,10 +279,33 @@ def soccer_net_pipeline(args):
     output_json = os.path.join(config.dataset['SoccerNet']['working_dir'],
                                config.dataset['SoccerNet'][args.part]['pose_output_json'])
 
+    tracklet_subset = None
+    subset_file = ''
+    mtl = getattr(config, 'soccer_net_max_tracklets', None)
+    if mtl is not None:
+        all_dirs = sorted(
+            d for d in os.listdir(image_dir)
+            if os.path.isdir(os.path.join(image_dir, d))
+        )
+        tracklet_subset = all_dirs[: int(mtl)]
+        subset_file = os.path.join(
+            config.dataset['SoccerNet']['working_dir'],
+            f'tracklet_subset_{args.part}.json',
+        )
+        with open(subset_file, 'w') as sf:
+            json.dump(tracklet_subset, sf)
+        print(f"SoccerNet tracklet limit: {len(tracklet_subset)} of {len(all_dirs)} folders (see {subset_file})")
+
+    subset_arg = ''
+    if tracklet_subset is not None:
+        subset_arg = f' --subset_file "{os.path.abspath(subset_file)}"'
+
     # 1. Filter out soccer ball based on images size
     if args.pipeline['soccer_ball_filter']:
         print("Determine soccer ball")
-        success = helpers.identify_soccer_balls(image_dir, soccer_ball_list)
+        success = helpers.identify_soccer_balls(
+            image_dir, soccer_ball_list, allowed_tracklets=tracklet_subset
+        )
         print("Done determine soccer ball")
 
     # 1. generate and store features for each image in each tracklet
@@ -273,12 +314,12 @@ def soccer_net_pipeline(args):
         if shutil.which("conda"):
             command = (
                 f"conda run -n {config.reid_env} python {config.reid_script} "
-                f"--tracklets_folder {image_dir} --output_folder {features_dir}"
+                f"--tracklets_folder {image_dir} --output_folder {features_dir}{subset_arg}"
             )
         else:
             command = (
                 f"python {config.reid_script} "
-                f"--tracklets_folder {image_dir} --output_folder {features_dir}"
+                f"--tracklets_folder {image_dir} --output_folder {features_dir}{subset_arg}"
             )
         success = os.system(command) == 0
         print("Done generating features")
@@ -286,7 +327,7 @@ def soccer_net_pipeline(args):
     #2. identify and remove outliers based on features
     if args.pipeline['filter'] and success:
         print("Identify and remove outliers")
-        command = f"python3 gaussian_outliers.py --tracklets_folder {image_dir} --output_folder {features_dir}"
+        command = f"python gaussian_outliers.py --tracklets_folder {image_dir} --output_folder {features_dir}{subset_arg}"
         success = os.system(command) == 0
         print("Done removing outliers")
 
@@ -294,7 +335,9 @@ def soccer_net_pipeline(args):
     if args.pipeline['legible'] and success:
         print("Classifying Legibility:")
         try:
-            legible_dict, illegible_tracklets = get_soccer_net_legibility_results(args, use_filtered=True, filter='gauss', exclude_balls=True)
+            legible_dict, illegible_tracklets = get_soccer_net_legibility_results(
+                args, use_filtered=True, filter='gauss', exclude_balls=True, tracklet_ids=tracklet_subset
+            )
             #get_soccer_net_raw_legibility_results(args)
             #legible_dict, illegible_tracklets = get_soccer_net_combined_legibility_results(args)
         except Exception as error:
@@ -366,7 +409,21 @@ def soccer_net_pipeline(args):
             if legible_results is None:
                 with open(full_legibile_path, "r") as outfile:
                     legible_results = json.load(outfile)
-            helpers.generate_crops(output_json, crops_destination_dir, legible_results)
+            scores_name = config.dataset['SoccerNet'][args.part].get('legibility_scores', 'legibility_scores.json')
+            legibility_scores_path = os.path.join(config.dataset['SoccerNet']['working_dir'], scores_name)
+            legibility_scores = None
+            if os.path.isfile(legibility_scores_path):
+                with open(legibility_scores_path, 'r') as sf:
+                    legibility_scores = json.load(sf)
+            prop = config.proposal
+            helpers.generate_crops(
+                output_json,
+                crops_destination_dir,
+                legible_results,
+                legibility_scores=legibility_scores,
+                min_legibility_score=prop['min_legibility_score_for_crop'],
+                use_color_filter=prop['use_color_filter_on_crops'],
+            )
         except Exception as e:
             print(e)
             success = False
@@ -379,33 +436,46 @@ def soccer_net_pipeline(args):
         print("Predict numbers")
         image_dir = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['crops_folder'])
 
+        min_str = config.proposal['min_str_frame_confidence']
         if shutil.which("conda"):
             command = (
                 f"conda run -n {config.str_env} python str.py {config.dataset['SoccerNet']['str_model']} "
-                f"--data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file}"
+                f"--data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file} "
+                f"--min_str_confidence={min_str}"
             )
         else:
             command = (
                 f"python str.py {config.dataset['SoccerNet']['str_model']} "
-                f"--data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file}"
+                f"--data_root={image_dir} --batch_size=1 --inference --result_file {str_result_file} "
+                f"--min_str_confidence={min_str}"
             )
         success = os.system(command) == 0
         print("Done predict numbers")
 
     #str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'], "val_jersey_id_predictions.json")
     if args.pipeline['combine'] and success:
-        #8. combine tracklet results
+        #8. combine tracklet results (proposal: digit-wise logits or confidence-weighted aggregation)
         analysis_results = None
-        #read predicted results, stack unique predictions, sum confidence scores for each, choose argmax
-        results_dict, analysis_results = helpers.process_jersey_id_predictions(str_result_file, useBias=True)
-        #results_dict, analysis_results = helpers.process_jersey_id_predictions_raw(str_result_file, useTS=True)
-        #results_dict, analysis_results = helpers.process_jersey_id_predictions_bayesian(str_result_file, useTS=True, useBias=True, useTh=True)
+        prop = config.proposal
+        mfc = prop['min_tracklet_frame_confidence']
+        if prop['combine_mode'] == 'digit_wise':
+            results_dict, analysis_results = helpers.process_jersey_id_predictions_bayesian(
+                str_result_file, useTS=False, useBias=True, useTh=False
+            )
+        else:
+            results_dict, analysis_results = helpers.process_jersey_id_predictions(
+                str_result_file, useBias=True, min_frame_confidence=mfc
+            )
 
         # add illegible tracklet predictions
         consolidated_dict = consolidated_results(image_dir, results_dict, illegible_path, soccer_ball_list=soccer_ball_list)
 
         #save results as json
-        final_results_path = os.path.join(config.dataset['SoccerNet']['working_dir'], config.dataset['SoccerNet'][args.part]['final_result'])
+        part_cfg = config.dataset['SoccerNet'][args.part]
+        if 'final_result' not in part_cfg or not part_cfg['final_result']:
+            final_results_path = os.path.join(config.dataset['SoccerNet']['working_dir'], 'final_results.json')
+        else:
+            final_results_path = os.path.join(config.dataset['SoccerNet']['working_dir'], part_cfg['final_result'])
         with open(final_results_path, 'w') as f:
             json.dump(consolidated_dict, f)
 

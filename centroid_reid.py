@@ -1,6 +1,7 @@
 from pathlib import Path
 import sys
 import os
+import json
 import argparse
 
 ROOT = './reid/centroids-reid/'
@@ -59,7 +60,7 @@ def _checkpoint_valid(path):
         )
 
 
-def generate_features(input_folder, output_folder, model_version='res50_market'):
+def generate_features(input_folder, output_folder, model_version='res50_market', subset_tracklets=None):
     # load model
     CONFIG_FILE, MODEL_FILE = get_specs_from_version(model_version)
     cfg.merge_from_file(CONFIG_FILE)
@@ -77,6 +78,9 @@ def generate_features(input_folder, output_folder, model_version='res50_market')
     model.eval()
 
     tracks = os.listdir(input_folder)
+    if subset_tracklets is not None:
+        allow = set(subset_tracklets)
+        tracks = [t for t in tracks if t in allow]
     transforms_base = ReidTransforms(cfg)
     val_transforms = transforms_base.build_transforms(is_train=False)
 
@@ -105,12 +109,18 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--tracklets_folder', help="Folder containing tracklet directories with images")
     parser.add_argument('--output_folder', help="Folder to store features in, one file per tracklet")
+    parser.add_argument('--subset_file', default='', help="Optional JSON list of tracklet directory names to process only")
     args = parser.parse_args()
 
     #create if does not exist
     Path(args.output_folder).mkdir(parents=True, exist_ok=True)
 
-    generate_features(args.tracklets_folder, args.output_folder)
+    subset = None
+    if args.subset_file and os.path.isfile(args.subset_file):
+        with open(args.subset_file, 'r') as sf:
+            subset = json.load(sf)
+
+    generate_features(args.tracklets_folder, args.output_folder, subset_tracklets=subset)
 
 
 
