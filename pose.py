@@ -9,7 +9,13 @@ sys.path.append(str(ROOT))  # add ROOT to PATH
 
 from argparse import ArgumentParser
 
+import torch
 from xtcocotools.coco import COCO
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 from mmpose.apis import (inference_top_down_pose_model, init_pose_model,
                          vis_pose_result)
@@ -63,13 +69,24 @@ def main():
 
     args = parser.parse_args()
 
-    print(args.show, args.out_img_root)
-    # assert args.show or (args.out_img_root != '')
+    device = args.device.lower()
+    if device.startswith('cuda') and not torch.cuda.is_available():
+        warnings.warn(
+            'CUDA was requested but this PyTorch build has no CUDA (or no GPU driver). '
+            'Using CPU for ViTPose; inference will be slow.',
+            UserWarning,
+        )
+        device = 'cpu'
 
     coco = COCO(args.json_file)
+    img_keys = list(coco.imgs.keys())
+    n_img = len(img_keys)
+    print(f'ViTPose: {n_img} image(s), device={device}', flush=True)
+    print('ViTPose: loading model (slow on first run / CPU)...', flush=True)
     # build the pose model from a config file and a checkpoint file
     pose_model = init_pose_model(
-        args.pose_config, args.pose_checkpoint, device=args.device.lower())
+        args.pose_config, args.pose_checkpoint, device=device)
+    print('ViTPose: model ready. Starting inference.', flush=True)
 
     dataset = pose_model.cfg.data['test']['type']
     dataset_info = pose_model.cfg.data['test'].get('dataset_info', None)
@@ -81,8 +98,6 @@ def main():
     else:
         dataset_info = DatasetInfo(dataset_info)
 
-    img_keys = list(coco.imgs.keys())
-
     # optional
     return_heatmap = False
 
@@ -91,8 +106,11 @@ def main():
 
     results = []
 
+    indices = range(len(img_keys))
+    if tqdm is not None:
+        indices = tqdm(indices, desc='ViTPose', unit='img', mininterval=1.0)
     # process each image
-    for i in range(len(img_keys)):
+    for i in indices:
         # get bounding box annotations
         image_id = img_keys[i]
         image = coco.loadImgs(image_id)[0]
@@ -142,9 +160,14 @@ def main():
             show=args.show,
             out_file=out_file)
 
+        if tqdm is None and (n_img <= 20 or (i + 1) % max(1, n_img // 10) == 0 or i == n_img - 1):
+            print(f'ViTPose: finished {i + 1}/{n_img} image(s)', flush=True)
+
     if args.out_json != '':
         with open(args.out_json, 'w') as fp:
             json.dump({"pose_results": results}, fp)
+        print(f'ViTPose: wrote {args.out_json}', flush=True)
+    print('ViTPose: done.', flush=True)
 
 
 if __name__ == '__main__':
