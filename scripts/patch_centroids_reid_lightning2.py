@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 import sys
 from pathlib import Path
 
@@ -54,6 +55,25 @@ def main() -> int:
             continue
         path.write_text(text.replace(needle, repl, 1), encoding="utf-8")
         print("Patched:", path)
+
+    bases = root / "modelling" / "bases.py"
+    if bases.is_file():
+        bt = bases.read_text(encoding="utf-8")
+        if "save_hyperparameters(AttributeDict(hparams))" in bt and "self.hparams = AttributeDict(hparams)" not in bt:
+            print("Already patched:", bases)
+        else:
+            new_bt, n = re.subn(
+                r"^([ \t]*)self\.hparams = AttributeDict\(hparams\)\s*\n[ \t]*self\.save_hyperparameters\(self\.hparams\)",
+                r"\1self.save_hyperparameters(AttributeDict(hparams))",
+                bt,
+                count=1,
+                flags=re.MULTILINE,
+            )
+            if n:
+                bases.write_text(new_bt, encoding="utf-8")
+                print("Patched:", bases)
+            else:
+                print(f"No hparams block to patch in {bases}; leave unchanged.", file=sys.stderr)
     return 0
 
 

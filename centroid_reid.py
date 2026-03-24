@@ -3,6 +3,7 @@ import sys
 import os
 import json
 import argparse
+import re
 
 # Absolute path + insert at front so `import datasets` resolves to centroids-reid/datasets/,
 # not Hugging Face `datasets` from site-packages (Colab has both).
@@ -50,6 +51,29 @@ def _patch_centroids_reid_for_pl2():
         'from pytorch_lightning.callbacks import Callback',
         lambda t: 'pytorch_lightning.callbacks import Callback' in t and 'callbacks.base' not in t,
     )
+    # PL 2.x: self.hparams has no setter; only save_hyperparameters(...) is allowed.
+    _bases = os.path.join(root, 'modelling', 'bases.py')
+    if os.path.isfile(_bases):
+        try:
+            _bt = open(_bases, encoding='utf-8').read()
+        except OSError:
+            pass
+        else:
+            if 'save_hyperparameters(AttributeDict(hparams))' in _bt and 'self.hparams = AttributeDict(hparams)' not in _bt:
+                pass
+            else:
+                _new_bt, _n = re.subn(
+                    r'^([ \t]*)self\.hparams = AttributeDict\(hparams\)\s*\n[ \t]*self\.save_hyperparameters\(self\.hparams\)',
+                    r'\1self.save_hyperparameters(AttributeDict(hparams))',
+                    _bt,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+                if _n:
+                    try:
+                        open(_bases, 'w', encoding='utf-8').write(_new_bt)
+                    except OSError:
+                        pass
 
 
 _patch_centroids_reid_for_pl2()
