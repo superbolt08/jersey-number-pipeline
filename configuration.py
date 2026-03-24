@@ -28,7 +28,7 @@ legibility_train_lr = 0.001
 legibility_train_momentum = 0.85
 
 # Limit SoccerNet pipeline to the first N tracklet folders (sorted by name), per split. None = all tracklets.
-soccer_net_max_tracklets = 5
+soccer_net_max_tracklets = None
 
 dataset = {'SoccerNet':
                 {'root_dir': './data/SoccerNet/jersey-2023',
