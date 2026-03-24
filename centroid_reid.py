@@ -56,6 +56,19 @@ _patch_centroids_reid_for_pl2()
 
 import numpy as np
 import torch
+
+# PyTorch 2.6+ defaults torch.load(weights_only=True). Lightning .ckpt files need full pickle
+# (callbacks, etc.); trust only checkpoints you placed in reid/centroids-reid/models/.
+_orig_torch_load = torch.load
+
+
+def _torch_load_for_pl_ckpt(*args, **kwargs):
+    kwargs["weights_only"] = False
+    return _orig_torch_load(*args, **kwargs)
+
+
+torch.load = _torch_load_for_pl_ckpt
+
 from tqdm import tqdm
 import cv2
 from PIL import Image
