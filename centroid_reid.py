@@ -8,35 +8,46 @@ ROOT = './reid/centroids-reid/'
 sys.path.append(str(ROOT))  # add ROOT to PATH
 
 
-def _patch_centroids_reid_misc_for_pl2():
-    """Upstream centroids-reid targets PL 1.x; PL 2.x moved seed_everything."""
-    misc_path = os.path.normpath(os.path.join(ROOT, 'utils', 'misc.py'))
-    if not os.path.isfile(misc_path):
-        return
-    try:
-        with open(misc_path, encoding='utf-8') as f:
-            text = f.read()
-    except OSError:
-        return
-    if 'lightning_fabric.utilities.seed' in text:
-        return
-    needle = 'from pytorch_lightning.utilities.seed import seed_everything'
-    if needle not in text:
-        return
-    repl = (
-        'try:\n'
-        '    from pytorch_lightning.utilities.seed import seed_everything\n'
-        'except ImportError:\n'
-        '    from lightning_fabric.utilities.seed import seed_everything'
+def _patch_centroids_reid_for_pl2():
+    """Upstream centroids-reid targets PL 1.x; patch vendored files for PyTorch Lightning 2.x."""
+    root = os.path.normpath(ROOT)
+
+    def _write_if_changed(path, old, new, skip_if):
+        if not os.path.isfile(path):
+            return
+        try:
+            text = open(path, encoding='utf-8').read()
+        except OSError:
+            return
+        if skip_if(text):
+            return
+        if old not in text:
+            return
+        try:
+            open(path, 'w', encoding='utf-8').write(text.replace(old, new, 1))
+        except OSError:
+            pass
+
+    _write_if_changed(
+        os.path.join(root, 'utils', 'misc.py'),
+        'from pytorch_lightning.utilities.seed import seed_everything',
+        (
+            'try:\n'
+            '    from pytorch_lightning.utilities.seed import seed_everything\n'
+            'except ImportError:\n'
+            '    from lightning_fabric.utilities.seed import seed_everything'
+        ),
+        lambda t: 'lightning_fabric.utilities.seed' in t,
     )
-    try:
-        with open(misc_path, 'w', encoding='utf-8') as f:
-            f.write(text.replace(needle, repl, 1))
-    except OSError:
-        pass
+    _write_if_changed(
+        os.path.join(root, 'callbacks', 'chechpointer_callback.py'),
+        'from pytorch_lightning.callbacks.base import Callback',
+        'from pytorch_lightning.callbacks import Callback',
+        lambda t: 'pytorch_lightning.callbacks import Callback' in t and 'callbacks.base' not in t,
+    )
 
 
-_patch_centroids_reid_misc_for_pl2()
+_patch_centroids_reid_for_pl2()
 
 import numpy as np
 import torch
