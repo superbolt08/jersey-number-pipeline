@@ -1,0 +1,13 @@
+# PARSeq / strhub for inference when torch + torchvision are already installed (e.g. Colab GPU, main pipeline env).
+# Do NOT use requirements/core.txt there — it pins CPU torch 1.13 and conflicts with PyTorch 2.x.
+lmdb>=1.4.0
+timm>=0.9.0
+pytorch-lightning>=2.0
+lightning-utilities>=0.9.0
+torchmetrics>=1.0.0
+PyYAML>=6.0
+numpy>=1.24
+nltk>=3.8
+huggingface-hub>=0.16
+safetensors>=0.3
+einops>=0.6
