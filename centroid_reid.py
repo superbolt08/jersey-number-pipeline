@@ -4,8 +4,13 @@ import os
 import json
 import argparse
 
-ROOT = './reid/centroids-reid/'
-sys.path.append(str(ROOT))  # add ROOT to PATH
+# Absolute path + insert at front so `import datasets` resolves to centroids-reid/datasets/,
+# not Hugging Face `datasets` from site-packages (Colab has both).
+_ROOT_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reid', 'centroids-reid')
+)
+sys.path.insert(0, _ROOT_DIR)
+ROOT = _ROOT_DIR + os.sep
 
 
 def _patch_centroids_reid_for_pl2():
