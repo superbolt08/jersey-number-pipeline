@@ -21,3 +21,4 @@ scipy
 
 # Utilities
 tqdm
+gdown
