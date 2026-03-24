@@ -333,6 +333,15 @@ The files in this `setup-documentation` folder differ from the original pipeline
 | **centroid_reid.py** | Before loading the Re-ID checkpoint, the file is checked (size and first bytes). If it looks like HTML or is too small, a clear error is raised so you re-download the real weights instead of getting a pickle error. Tracklet iteration skips non-directory entries (e.g. `.DS_Store`) so feature extraction does not crash. |
 | **reid/centroids-reid/losses/center_loss.py** | `use_gpu` is effectively set to `use_gpu and torch.cuda.is_available()`. The original code always called `.cuda()` when `use_gpu=True`, which crashes on CPU-only machines; now CUDA is only used when available. |
 | **requirements.txt** | Added for the main pipeline environment so you can install the jersey env's dependencies in one step (`pip install -r requirements.txt`) with CPU-friendly versions of PyTorch and other packages. |
+| **configuration.py** *(additional)* | `proposal` dict: tracklet combine mode (`digit_wise` vs confidence-weighted), STR and legibility thresholds, optional CLAHE-style color filter on crops. `soccer_net_max_tracklets` limits how many tracklet folders run per split (smoke tests). `legibility_train_lr` / `legibility_train_momentum` and per-split `legibility_scores` JSON paths; validation split includes `final_result`. |
+| **main.py** *(additional)* | Writes `tracklet_subset_<part>.json` when `soccer_net_max_tracklets` is set; passes `--subset_file` into ReID and Gaussian steps; saves per-image legibility scores for gating. **`--resume`** skips stages whose outputs already exist; **`--force`** re-runs everything. Wires proposal options into crops, STR (`--min_str_confidence`), and combine. STR step uses a separate `crops_data_root` so the SoccerNet `image_dir` path is not overwritten. |
+| **helpers.py** *(additional)* | `color_filter_jersey_digits` (CLAHE on L channel) and optional `legibility_scores` / `min_legibility_score` / `use_color_filter` on `generate_crops`. Tracklet aggregation: `min_frame_confidence`, Bayesian label parsing via `_parse_jersey_string_from_tokens`. `identify_soccer_balls(..., allowed_tracklets=...)` for subset runs. |
+| **legibility_classifier.py** *(additional)* | `run(..., return_raw_scores=True)` returns binary legibility plus raw scores for JSON. Training SGD uses `legibility_train_lr` / `legibility_train_momentum` from config; non-SAM path uses 25 epochs. |
+| **str.py** *(additional)* | `--min_str_confidence`: skip writing STR results for crops whose product of token confidences is below the threshold. |
+| **pose.py** *(additional)* | If `--device` requests CUDA but `torch.cuda.is_available()` is false, warns and uses **CPU** so ViTPose does not crash with “Torch not compiled with CUDA enabled” on CPU-only builds. |
+| **centroid_reid.py** *(additional)* | Optional **`--subset_file`** (JSON list of tracklet folder names): extract ReID features only for those folders. |
+| **gaussian_outliers.py** *(additional)* | Optional **`--subset_file`**: Gaussian / main-subject filtering only for those tracklets (must match feature `.npy` files present). |
+| **jersey_number_dataset.py** *(additional)* | Train transforms add mild **rotation**, **Gaussian blur**, and tuned **ColorJitter** for more robust legibility training. |
 
 ## Nested data layout and annotation format (latest changes)
 
@@ -372,3 +381,9 @@ frame_0002.jpg,0
 ```
 
 If your data only has `train_gt.json`, convert it to this TXT format and save as `train/train/train_gt.txt` (and similarly for `val/val/val_gt.txt`, `test/test/test_gt.txt`) without moving the image directories.
+
+## Quick reference: resume and subset (SoccerNet)
+
+- **`python main.py SoccerNet test --resume`** — skip stages whose outputs already exist (see the **main.py** row in [Why these files were changed](#why-these-files-were-changed) above).
+- **`python main.py SoccerNet test --force`** — ignore resume and re-run all stages.
+- Set **`soccer_net_max_tracklets`** in `configuration.py` to a small integer (e.g. `5`) for fast smoke tests, or **`None`** for the full split.

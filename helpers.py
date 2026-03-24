@@ -164,7 +164,8 @@ def generate_crops_from_detections(det_path, crops_destination_dir, legible_resu
         cv2.imwrite(os.path.join(crops_destination_dir, base_name), crop)
 
 # crop torso based on joints and save cropped images
-def generate_crops(json_file, crops_destination_dir, legible_results, all_legible = None):
+def generate_crops(json_file, crops_destination_dir, legible_results, all_legible = None,
+                   legibility_scores=None, min_legibility_score=0.0, use_color_filter=False):
     if all_legible is None:
         all_legible = []
         for key in legible_results.keys():
@@ -182,6 +183,14 @@ def generate_crops(json_file, crops_destination_dir, legible_results, all_legibl
         img_name = entry["img_name"]
 
         if not os.path.basename(img_name) in all_legible:
+            continue
+        if min_legibility_score > 0 and _lookup_legibility_score(legibility_scores, img_name) < min_legibility_score:
+            tr = os.path.basename(img_name).split('_')[0]
+            if tr not in skipped.keys():
+                skipped[tr] = 1
+            else:
+                skipped[tr] += 1
+            misses += 1
             continue
         if len(filtered_points) == 0:
             #TODO: better approach then skipping
@@ -220,7 +229,8 @@ def generate_crops(json_file, crops_destination_dir, legible_results, all_legibl
             continue
         saved.append(img_name)
         name = os.path.basename(img_name)
-        cv2.imwrite(os.path.join(crops_destination_dir, name), crop)
+        out_img = color_filter_jersey_digits(crop) if use_color_filter else crop
+        cv2.imwrite(os.path.join(crops_destination_dir, name), out_img)
     print(f"skipped {misses} out of {len(all_poses)}")
     return skipped, saved
 
@@ -245,11 +255,34 @@ def get_bias(value):
 
 SUM_THRESHOLD = 1
 FILTER_THRESHOLD = 0.2
-def find_best_prediction(results, useBias=False):
-    if FILTER_THRESHOLD > 0:
-        for entry in results:
-            if entry[1] < FILTER_THRESHOLD:
-                entry[1] = 0
+
+
+def color_filter_jersey_digits(bgr):
+    """CLAHE on L channel to emphasize jersey digits before STR."""
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    l_ch, a_ch, b_ch = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    l2 = clahe.apply(l_ch)
+    merged = cv2.merge((l2, a_ch, b_ch))
+    return cv2.cvtColor(merged, cv2.COLOR_LAB2BGR)
+
+
+def _lookup_legibility_score(legibility_scores, img_name):
+    if not legibility_scores:
+        return 1.0
+    if img_name in legibility_scores:
+        return float(legibility_scores[img_name])
+    base = os.path.basename(img_name)
+    if base in legibility_scores:
+        return float(legibility_scores[base])
+    return 1.0
+
+
+def find_best_prediction(results, useBias=False, min_frame_confidence=0.0):
+    results = np.asarray(results, dtype=np.float64).copy()
+    floor = max(FILTER_THRESHOLD, min_frame_confidence)
+    if floor > 0:
+        results[results[:, 1] < floor, 1] = 0
     unique_predictions = np.unique(results[:, 0])
     #print(unique_predictions)
     weights = []
@@ -265,6 +298,12 @@ def find_best_prediction(results, useBias=False):
     index_of_best = np.argmax(weights)
     best_prediction = unique_predictions[index_of_best] if best_weight > SUM_THRESHOLD else -1
     return best_prediction, unique_predictions, weights
+
+
+def _parse_jersey_string_from_tokens(batch_tokens):
+    """Convert PARSeq token string (e.g. '37', '7') to a jersey label string."""
+    s = ''.join(c for c in batch_tokens if c.isdigit())
+    return s if s else '-1'
 
 
 token_list = 'E0123456789'
@@ -457,14 +496,15 @@ def process_jersey_id_predictions_bayesian(file_path, useTS = False, useBias = F
         best_prediction, probs = predict_jersey_number(results, useBias=useBias)
 
         # best_prediction, all_unique, weights = find_best_prediction_with_vector(results)
+        label_str = _parse_jersey_string_from_tokens(best_prediction)
         prob = probs[0] if len(probs) == 1 else probs[0] + probs[1]
         if useTh and prob < -850:
                 final_results[tracklet] = '-1'
                 final_full_results[tracklet] = {'label': '-1', 'unique': [],
                                                 'weights': probs}
         else:
-            final_results[tracklet] = str(int(best_prediction))
-            final_full_results[tracklet] = {'label': str(int(best_prediction)), 'unique': [],
+            final_results[tracklet] = label_str
+            final_full_results[tracklet] = {'label': label_str, 'unique': [],
                                         'weights': probs}
 
     return final_results, final_full_results
@@ -501,16 +541,20 @@ def process_jersey_id_predictions_raw(file_path, useTS = False ):
         best_prediction, probs = find_best_prediction_raw(results)
 
         # best_prediction, all_unique, weights = find_best_prediction_with_vector(results)
-        final_results[tracklet] = str(int(best_prediction))
-        final_full_results[tracklet] = {'label': str(int(best_prediction)), 'unique': [],
+        label_str = _parse_jersey_string_from_tokens(best_prediction)
+        final_results[tracklet] = label_str
+        final_full_results[tracklet] = {'label': label_str, 'unique': [],
                                         'weights': probs}
 
     return final_results, final_full_results
 
-def identify_soccer_balls(image_dir, soccer_ball_list):
+def identify_soccer_balls(image_dir, soccer_ball_list, allowed_tracklets=None):
     # check 10 random images for each track, mark as soccer ball if the size matches typical soccer ball size
     ball_list = []
-    tracklets = os.listdir(image_dir)
+    if allowed_tracklets is not None:
+        tracklets = list(allowed_tracklets)
+    else:
+        tracklets = os.listdir(image_dir)
     for track in tqdm(tracklets):
         track_path = os.path.join(image_dir, track)
         if not os.path.isdir(track_path):
@@ -535,7 +579,7 @@ def identify_soccer_balls(image_dir, soccer_ball_list):
         json.dump({'ball_tracks': ball_list}, fp)
     return True
 
-def process_jersey_id_predictions(file_path, useBias=False):
+def process_jersey_id_predictions(file_path, useBias=False, min_frame_confidence=0.0):
     all_results = {}
     final_results = {}
     with open(file_path, 'r') as f:
@@ -563,12 +607,19 @@ def process_jersey_id_predictions(file_path, useBias=False):
         if len(all_results[tracklet]) == 0:
             continue
         results = np.array(all_results[tracklet])
+        if min_frame_confidence > 0:
+            results = results[results[:, 1] >= min_frame_confidence]
+        if len(results) == 0:
+            final_results[tracklet] = '-1'
+            final_full_results[tracklet] = {'label': '-1', 'unique': np.array([]), 'weights': []}
+            continue
 
-        best_prediction, all_unique, weights = find_best_prediction(results, useBias=useBias)
+        best_prediction, all_unique, weights = find_best_prediction(results, useBias=useBias, min_frame_confidence=0.0)
 
         #best_prediction, all_unique, weights = find_best_prediction_with_vector(results)
-        final_results[tracklet] = str(int(best_prediction))
-        final_full_results[tracklet] = {'label':  str(int(best_prediction)), 'unique': all_unique, 'weights':weights}
+        pred_str = str(int(best_prediction)) if best_prediction != -1 else '-1'
+        final_results[tracklet] = pred_str
+        final_full_results[tracklet] = {'label': pred_str, 'unique': all_unique, 'weights':weights}
 
     return final_results, final_full_results
 

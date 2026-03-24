@@ -3,17 +3,39 @@ import os
 import warnings
 import json
 import sys
+import time
 
 ROOT = './pose/ViTPose/'
 sys.path.append(str(ROOT))  # add ROOT to PATH
 
 from argparse import ArgumentParser
 
+import torch
 from xtcocotools.coco import COCO
+
+try:
+    from tqdm import tqdm
+except ImportError:
+    tqdm = None
 
 from mmpose.apis import (inference_top_down_pose_model, init_pose_model,
                          vis_pose_result)
 from mmpose.datasets import DatasetInfo
+
+
+class _StepTimer:
+    """Delta since last log line and total elapsed (matches main.py SoccerNet pipeline)."""
+
+    def __init__(self):
+        self._t0 = time.perf_counter()
+        self._last = self._t0
+
+    def tick(self, msg):
+        now = time.perf_counter()
+        dt = now - self._last
+        total = now - self._t0
+        self._last = now
+        print(f"{msg}  [+{dt:.2f}s | {total:.1f}s total]", flush=True)
 
 
 def main():
@@ -62,14 +84,26 @@ def main():
         help='Link thickness for visualization')
 
     args = parser.parse_args()
+    timer = _StepTimer()
 
-    print(args.show, args.out_img_root)
-    # assert args.show or (args.out_img_root != '')
+    device = args.device.lower()
+    if device.startswith('cuda') and not torch.cuda.is_available():
+        warnings.warn(
+            'CUDA was requested but this PyTorch build has no CUDA (or no GPU driver). '
+            'Using CPU for ViTPose; inference will be slow.',
+            UserWarning,
+        )
+        device = 'cpu'
 
     coco = COCO(args.json_file)
+    img_keys = list(coco.imgs.keys())
+    n_img = len(img_keys)
+    timer.tick(f'ViTPose: {n_img} image(s), device={device}')
+    timer.tick('ViTPose: loading model (slow on first run / CPU)')
     # build the pose model from a config file and a checkpoint file
     pose_model = init_pose_model(
-        args.pose_config, args.pose_checkpoint, device=args.device.lower())
+        args.pose_config, args.pose_checkpoint, device=device)
+    timer.tick('ViTPose: model ready. Starting inference.')
 
     dataset = pose_model.cfg.data['test']['type']
     dataset_info = pose_model.cfg.data['test'].get('dataset_info', None)
@@ -81,8 +115,6 @@ def main():
     else:
         dataset_info = DatasetInfo(dataset_info)
 
-    img_keys = list(coco.imgs.keys())
-
     # optional
     return_heatmap = False
 
@@ -91,8 +123,17 @@ def main():
 
     results = []
 
+    indices = range(len(img_keys))
+    if tqdm is not None:
+        indices = tqdm(
+            indices,
+            desc='ViTPose',
+            unit='img',
+            mininterval=0.5,
+            bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}]',
+        )
     # process each image
-    for i in range(len(img_keys)):
+    for i in indices:
         # get bounding box annotations
         image_id = img_keys[i]
         image = coco.loadImgs(image_id)[0]
@@ -142,9 +183,14 @@ def main():
             show=args.show,
             out_file=out_file)
 
+        if tqdm is None and (n_img <= 20 or (i + 1) % max(1, n_img // 10) == 0 or i == n_img - 1):
+            timer.tick(f'ViTPose: finished {i + 1}/{n_img} image(s)')
+
     if args.out_json != '':
         with open(args.out_json, 'w') as fp:
             json.dump({"pose_results": results}, fp)
+        timer.tick(f'ViTPose: wrote {args.out_json}')
+    timer.tick('ViTPose: done.')
 
 
 if __name__ == '__main__':

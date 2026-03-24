@@ -2,6 +2,8 @@ pose_home = 'pose/ViTPose'
 pose_env = 'vitpose'
 
 str_home = 'str/parseq/'
+# Conda env used for `python str.py` (PARSeq). Needs torch, strhub, and lmdb (strhub imports lmdb even for inference).
+# Install from repo: cd str/parseq && pip install -r requirements/core.txt && pip install -e .
 str_env = 'parseq2'
 str_platform = 'cu113'
 
@@ -11,6 +13,22 @@ reid_script = 'centroid_reid.py'
 
 reid_home = 'reid/'
 
+# COSC 419 proposal §4: confidence-weighted tracklet aggregation, STR / legibility thresholds,
+# optional digit-wise combine, and crop color filtering.
+proposal = {
+    'combine_mode': 'digit_wise',  # 'digit_wise' (PARSeq logits per digit) or 'confidence_weighted'
+    'min_str_frame_confidence': 0.12,  # product of token confidences; skip STR below this (SoccerNet-style gating)
+    'min_tracklet_frame_confidence': 0.15,  # exclude frames below this when aggregating tracklet prediction
+    'min_legibility_score_for_crop': 0.5,  # stricter pre-crop gate using raw legibility scores (<= legibility threshold)
+    'use_color_filter_on_crops': True,
+}
+
+# Legibility training defaults from proposal §3.2 (used when training legibility_classifier)
+legibility_train_lr = 0.001
+legibility_train_momentum = 0.85
+
+# Limit SoccerNet pipeline to the first N tracklet folders (sorted by name), per split. None = all tracklets.
+soccer_net_max_tracklets = 5
 
 dataset = {'SoccerNet':
                 {'root_dir': './data/SoccerNet/jersey-2023',
@@ -24,6 +42,7 @@ dataset = {'SoccerNet':
                         'sim_filtered': 'test/main_subject_0.4.json',
                         'gauss_filtered': 'test/main_subject_gauss_th=3.5_r=3.json',
                         'legible_result': 'legible.json',
+                        'legibility_scores': 'legibility_scores.json',
                         'raw_legible_result': 'raw_legible_resnet34.json',
                         'pose_input_json': 'pose_input.json',
                         'pose_output_json': 'pose_results.json',
@@ -37,13 +56,15 @@ dataset = {'SoccerNet':
                         'feature_output_folder': 'out/SoccerNetResults/val',
                         'illegible_result': 'illegible_val.json',
                         'legible_result': 'legible_val.json',
+                        'legibility_scores': 'legibility_scores_val.json',
                         'soccer_ball_list': 'soccer_ball_val.json',
                         'crops_folder': 'crops_val',
                         'sim_filtered': 'val/main_subject_0.4.json',
                         'gauss_filtered': 'val/main_subject_gauss_th=3.5_r=3.json',
                         'pose_input_json': 'pose_input_val.json',
                         'pose_output_json': 'pose_results_val.json',
-                        'jersey_id_result': 'jersey_id_results_validation.json'
+                        'jersey_id_result': 'jersey_id_results_validation.json',
+                        'final_result': 'final_results_val.json',
                     },
                  'train': {
                      'images': 'train/images',
@@ -51,6 +72,7 @@ dataset = {'SoccerNet':
                      'feature_output_folder': 'out/SoccerNetResults/train',
                      'illegible_result': 'illegible_train.json',
                      'legible_result': 'legible_train.json',
+                     'legibility_scores': 'legibility_scores_train.json',
                      'soccer_ball_list': 'soccer_ball_train.json',
                      'sim_filtered': 'train/main_subject_0.4.json',
                      'gauss_filtered': 'train/main_subject_gauss_th=3.5_r=3.json',
@@ -67,6 +89,7 @@ dataset = {'SoccerNet':
                         'sim_filtered': 'challenge/main_subject_0.4.json',
                         'gauss_filtered': 'challenge/main_subject_gauss_th=3.5_r=3.json',
                         'legible_result': 'challenge_legible.json',
+                        'legibility_scores': 'legibility_scores_challenge.json',
                         'pose_input_json': 'challenge_pose_input.json',
                         'pose_output_json': 'challenge_pose_results.json',
                         'crops_folder': 'challenge_crops',

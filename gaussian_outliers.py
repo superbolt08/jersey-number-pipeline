@@ -6,8 +6,11 @@ import json
 import os
 import argparse
 
-def get_main_subject(image_folder, feature_folder, threshold = 3.5, rounds = 3):
+def get_main_subject(image_folder, feature_folder, threshold = 3.5, rounds = 3, subset_tracklets=None):
     tracks = os.listdir(image_folder)
+    if subset_tracklets is not None:
+        allow = set(subset_tracklets)
+        tracks = [t for t in tracks if t in allow]
 
     results = {}
     for r in range(rounds):
@@ -55,6 +58,13 @@ if __name__ == "__main__":
     parser.add_argument('--output_folder', help="Folder to store features in, one file per tracklet")
     parser.add_argument('--threshold', type=float, default=3.5,  required=False, help="Threshold for outlier removal per round, used to compute distance threshold*std")
     parser.add_argument('--rounds',  type=int, default=3,  required=False, help="Number of iteration for outlier removal")
+    parser.add_argument('--subset_file', default='', help="Optional JSON list of tracklet directory names to process only")
     args = parser.parse_args()
 
-    get_main_subject(args.tracklets_folder, args.output_folder, threshold=args.threshold, rounds=args.rounds)
+    subset = None
+    if args.subset_file and os.path.isfile(args.subset_file):
+        with open(args.subset_file, 'r') as sf:
+            subset = json.load(sf)
+
+    get_main_subject(args.tracklets_folder, args.output_folder, threshold=args.threshold, rounds=args.rounds,
+                     subset_tracklets=subset)

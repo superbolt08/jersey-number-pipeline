@@ -349,7 +349,7 @@ def test_model(model, subset, result_path=None):
 
 
 # run inference on a list of files
-def run(image_paths, model_path, threshold=0.5, arch='resnet18'):
+def run(image_paths, model_path, threshold=0.5, arch='resnet18', return_raw_scores=False):
     # setup data
     dataset = UnlabelledJerseyNumberLegibilityDataset(image_paths, arch=arch)
     dataloader = torch.utils.data.DataLoader(dataset, batch_size=4,
@@ -374,22 +374,25 @@ def run(image_paths, model_path, threshold=0.5, arch='resnet18'):
 
     # run classifier
     results = []
+    raw_scores = []
     for inputs in dataloader:
-        # print(f"input and label sizes:{len(inputs), len(labels)}")
         inputs = inputs.to(device)
 
-        # zero the parameter gradients
         torch.set_grad_enabled(False)
-        outputs = model_ft(inputs)
+        outputs = model_ft(inputs).float()
+        raw_batch = outputs.detach().cpu().numpy().flatten().tolist()
+        raw_scores += raw_batch
 
         if threshold > 0:
-            outputs = (outputs>threshold).float()
+            outputs = (outputs > threshold).float()
         else:
             outputs = outputs.float()
         preds = outputs.cpu().detach().numpy()
         flattened_preds = preds.flatten().tolist()
         results += flattened_preds
 
+    if return_raw_scores:
+        return results, raw_scores
     return results
 
 
@@ -476,19 +479,19 @@ if __name__ == '__main__':
         if args.sam:
             # Observe that all parameters are being optimized
             base_optimizer = torch.optim.SGD
-            optimizer_ft = SAM(model_ft.parameters(), base_optimizer, lr=0.001, momentum=0.9)
+            optimizer_ft = SAM(model_ft.parameters(), base_optimizer, lr=cfg.legibility_train_lr, momentum=cfg.legibility_train_momentum)
 
             if use_full_validation:
                 model_ft = train_model_with_sam_and_full_val(model_ft, criterion, optimizer_ft, num_epochs=10)
             else:
                 model_ft = train_model_with_sam(model_ft, criterion, optimizer_ft, num_epochs=10)
         else:
-            optimizer_ft = optim.SGD(model_ft.parameters(), lr=0.001, momentum=0.9)
+            optimizer_ft = optim.SGD(model_ft.parameters(), lr=cfg.legibility_train_lr, momentum=cfg.legibility_train_momentum)
 
             # Decay LR by a factor of 0.1 every 7 epochs
             exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
             model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
-                                   num_epochs=15)
+                                   num_epochs=25)
 
         timestr = time.strftime("%Y%m%d-%H%M%S")
         save_model_path = f"./experiments/legibility_{args.arch}_{timestr}.pth"
