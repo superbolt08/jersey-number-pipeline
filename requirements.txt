@@ -1,10 +1,14 @@
-# Jersey number pipeline — main environment (CPU)
+# Jersey number pipeline — main environment
 # Install: pip install -r requirements.txt
-# Use with: conda activate jersey (after creating env with conda create -n jersey python=3.8 -y)
+# Older README used torch 1.9.0; that build has no wheels for Python 3.11+.
+# For GPU + CUDA on Linux, you can install PyTorch first, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+# then: pip install -r requirements.txt --no-deps
+# (or omit --no-deps if you did not pin torch above)
 
-# Core (versions match project README)
-torch==1.9.0
-torchvision==0.10.0
+# Core (2.x — works on modern Python; inference loads checkpoints with map_location)
+torch>=2.2.0
+torchvision>=0.17.0
 
 # Vision & I/O
 opencv-python
