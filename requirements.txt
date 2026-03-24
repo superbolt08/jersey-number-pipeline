@@ -22,3 +22,7 @@ scipy
 # Utilities
 tqdm
 gdown
+
+# ViTPose / mmpose (pose.py). Colab/Linux: pip wheel usually OK. Windows: needs MSVC or
+#   conda install -c conda-forge xtcocotools
+xtcocotools
