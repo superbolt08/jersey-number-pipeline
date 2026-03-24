@@ -45,6 +45,15 @@ def _run_shell_with_updates(label, command, timer=None):
     return ok
 
 
+def _tracklet_dir_names(images_root):
+    """Names of subdirectories only (ignore .DS_Store and other files in images/)."""
+    return [
+        name
+        for name in os.listdir(images_root)
+        if os.path.isdir(os.path.join(images_root, name))
+    ]
+
+
 def _resume_skip(force, resume, outputs_ok, step_label, timer=None):
     """If resume mode and outputs look done, skip this step."""
     if force or not resume:
@@ -62,7 +71,7 @@ def get_soccer_net_raw_legibility_results(args, use_filtered = True, filter = 'g
     root_dir = config.dataset['SoccerNet']['root_dir']
     image_dir = config.dataset['SoccerNet'][args.part]['images']
     path_to_images = os.path.join(root_dir, image_dir)
-    tracklets = os.listdir(path_to_images)
+    tracklets = _tracklet_dir_names(path_to_images)
     results_dict = {x:[] for x in tracklets}
 
     if use_filtered:
@@ -110,7 +119,7 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
     root_dir = config.dataset['SoccerNet']['root_dir']
     image_dir = config.dataset['SoccerNet'][args.part]['images']
     path_to_images = os.path.join(root_dir, image_dir)
-    tracklets = os.listdir(path_to_images)
+    tracklets = _tracklet_dir_names(path_to_images)
 
     if use_filtered:
         if filter == 'sim':
@@ -195,7 +204,7 @@ def generate_json_for_pose_estimator(args, legible = None):
         root_dir = os.path.join(os.getcwd(), config.dataset['SoccerNet']['root_dir'])
         image_dir = config.dataset['SoccerNet'][args.part]['images']
         path_to_images = os.path.join(root_dir, image_dir)
-        tracks = os.listdir(path_to_images)
+        tracks = _tracklet_dir_names(path_to_images)
         for tr in tracks:
             track_dir = os.path.join(path_to_images, tr)
             imgs = os.listdir(track_dir)
@@ -221,7 +230,7 @@ def consolidated_results(image_dir, dict, illegible_path, soccer_ball_list=None)
         if not str(entry) in dict.keys():
             dict[str(entry)] = -1
 
-    all_tracks = os.listdir(image_dir)
+    all_tracks = _tracklet_dir_names(image_dir)
     for t in all_tracks:
         if not t in dict.keys():
             dict[t] = -1
