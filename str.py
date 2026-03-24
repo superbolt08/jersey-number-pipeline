@@ -130,7 +130,8 @@ def temperature_scale(logits, t):
     new_logits = torch.div(logits, temp)
     return new_logits
 
-temperature = nn.Parameter(torch.ones(1).cuda() * 1.5)
+# CPU-safe: module import must not call .cuda() (inference runs on CPU-only PyTorch).
+temperature = nn.Parameter(torch.ones(1) * 1.5)
 def set_temperature(model, data_root, img_size):
     """
     Tune the tempearature of the model (using the validation set).
@@ -252,7 +253,11 @@ def main():
     parser.add_argument('--new', action='store_true', default=False, help='Evaluate on new benchmark datasets')
     parser.add_argument('--custom', action='store_true', default=True, help='Evaluate on custom personal datasets')
     parser.add_argument('--rotation', type=int, default=0, help='Angle of rotation (counter clockwise) in degrees.')
-    parser.add_argument('--device', default='cuda')
+    parser.add_argument(
+        '--device',
+        default='cuda' if torch.cuda.is_available() else 'cpu',
+        help='cuda or cpu (default: cuda if available)',
+    )
     parser.add_argument('--inference', action='store_true', default=False, help='Run inference and store prediction results')
     parser.add_argument('--tune_temperature', action='store_true', default=False,
                         help='Find best t-scale')

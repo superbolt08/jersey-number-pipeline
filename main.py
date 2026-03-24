@@ -2,6 +2,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import time
 import legibility_classifier as lc
 import numpy as np
 import json
@@ -11,24 +12,48 @@ import configuration as config
 from pathlib import Path
 
 
-def _run_shell_with_updates(label, command):
+class _StepTimer:
+    """Print wall-clock delta since last line and total elapsed (for pipeline logging)."""
+
+    def __init__(self):
+        self._t0 = time.perf_counter()
+        self._last = self._t0
+
+    def tick(self, msg):
+        now = time.perf_counter()
+        dt = now - self._last
+        total = now - self._t0
+        self._last = now
+        print(f"{msg}  [+{dt:.2f}s | {total:.1f}s total]", flush=True)
+
+
+def _run_shell_with_updates(label, command, timer=None):
     """Run a shell command with unbuffered Python in the child and visible progress hints."""
-    print(f"\n[{label}] starting — subprocess output below (CPU steps can take tens of minutes).", flush=True)
+    if timer:
+        timer.tick(f"[{label}] subprocess starting (output follows)")
+    else:
+        print(f"\n[{label}] starting — subprocess output below (CPU steps can take tens of minutes).", flush=True)
     env = os.environ.copy()
     env['PYTHONUNBUFFERED'] = '1'
     env.setdefault('KMP_DUPLICATE_LIB_OK', 'TRUE')
     proc = subprocess.run(command, shell=True, env=env)
     ok = proc.returncode == 0
-    print(f"[{label}] {'OK' if ok else 'FAILED'} (exit code {proc.returncode})", flush=True)
+    if timer:
+        timer.tick(f"[{label}] subprocess {'OK' if ok else 'FAILED'} (exit {proc.returncode})")
+    else:
+        print(f"[{label}] {'OK' if ok else 'FAILED'} (exit code {proc.returncode})", flush=True)
     return ok
 
 
-def _resume_skip(force, resume, outputs_ok, step_label):
+def _resume_skip(force, resume, outputs_ok, step_label, timer=None):
     """If resume mode and outputs look done, skip this step."""
     if force or not resume:
         return False
     if outputs_ok:
-        print(f"Skipping {step_label} (--resume: expected outputs already present)", flush=True)
+        if timer:
+            timer.tick(f"Skipping {step_label} (--resume: expected outputs already present)")
+        else:
+            print(f"Skipping {step_label} (--resume: expected outputs already present)", flush=True)
         return True
     return False
 
@@ -288,6 +313,8 @@ def soccer_net_pipeline(args):
     analysis_results = None
     Path(config.dataset['SoccerNet']['working_dir']).mkdir(parents=True, exist_ok=True)
     success = True
+    timer = _StepTimer()
+    timer.tick(f"SoccerNet pipeline start (part={args.part})")
 
     image_dir = os.path.join(config.dataset['SoccerNet']['root_dir'], config.dataset['SoccerNet'][args.part]['images'])
     soccer_ball_list = os.path.join(config.dataset['SoccerNet']['working_dir'],
@@ -374,7 +401,9 @@ def soccer_net_pipeline(args):
         )
         with open(subset_file, 'w') as sf:
             json.dump(tracklet_subset, sf)
-        print(f"SoccerNet tracklet limit: {len(tracklet_subset)} of {len(all_dirs)} folders (see {subset_file})")
+        timer.tick(
+            f"SoccerNet tracklet limit: {len(tracklet_subset)} of {len(all_dirs)} folders (see {subset_file})"
+        )
 
     subset_arg = ''
     if tracklet_subset is not None:
@@ -382,17 +411,17 @@ def soccer_net_pipeline(args):
 
     # 1. Filter out soccer ball based on images size
     if args.pipeline['soccer_ball_filter']:
-        if not _resume_skip(force, resume, os.path.isfile(soccer_ball_list), 'soccer ball detection'):
-            print("Determine soccer ball")
+        if not _resume_skip(force, resume, os.path.isfile(soccer_ball_list), 'soccer ball detection', timer):
+            timer.tick("Determine soccer ball")
             success = helpers.identify_soccer_balls(
                 image_dir, soccer_ball_list, allowed_tracklets=tracklet_subset
             )
-            print("Done determine soccer ball")
+            timer.tick("Done determine soccer ball")
 
     # 1. generate and store features for each image in each tracklet
     if args.pipeline['feat']:
-        if not _resume_skip(force, resume, _all_reid_features_exist(), 'ReID feature extraction'):
-            print("Generate features")
+        if not _resume_skip(force, resume, _all_reid_features_exist(), 'ReID feature extraction', timer):
+            timer.tick("Generate features")
             if shutil.which("conda"):
                 command = (
                     f"conda run --no-capture-output -n {config.reid_env} python {config.reid_script} "
@@ -403,24 +432,24 @@ def soccer_net_pipeline(args):
                     f"python {config.reid_script} "
                     f"--tracklets_folder {image_dir} --output_folder {features_dir}{subset_arg}"
                 )
-            success = _run_shell_with_updates('ReID feature extraction', command)
-            print("Done generating features")
+            success = _run_shell_with_updates('ReID feature extraction', command, timer=timer)
+            timer.tick("Done generating features")
 
     #2. identify and remove outliers based on features
     if args.pipeline['filter'] and success:
-        if not _resume_skip(force, resume, _gaussian_outputs_exist(), 'Gaussian outlier filtering'):
-            print("Identify and remove outliers")
+        if not _resume_skip(force, resume, _gaussian_outputs_exist(), 'Gaussian outlier filtering', timer):
+            timer.tick("Identify and remove outliers")
             command = f"python gaussian_outliers.py --tracklets_folder {image_dir} --output_folder {features_dir}{subset_arg}"
-            success = _run_shell_with_updates('Gaussian outlier filtering', command)
-            print("Done removing outliers")
+            success = _run_shell_with_updates('Gaussian outlier filtering', command, timer=timer)
+            timer.tick("Done removing outliers")
 
     #3. pass all images through legibililty classifier and record results
     if args.pipeline['legible'] and success:
         legible_ready = os.path.isfile(full_legibile_path) and os.path.isfile(illegible_path)
-        if _resume_skip(force, resume, legible_ready, 'legibility classification'):
+        if _resume_skip(force, resume, legible_ready, 'legibility classification', timer):
             pass
         else:
-            print("Classifying Legibility:")
+            timer.tick("Classifying legibility")
             try:
                 legible_dict, illegible_tracklets = get_soccer_net_legibility_results(
                     args, use_filtered=True, filter='gauss', exclude_balls=True, tracklet_ids=tracklet_subset
@@ -430,11 +459,11 @@ def soccer_net_pipeline(args):
             except Exception as error:
                 print(f'Failed to run legibility classifier:{error}')
                 success = False
-            print("Done classifying legibility")
+            timer.tick("Done classifying legibility")
 
     #3.5 evaluate tracklet legibility results
     if args.pipeline['legible_eval'] and success:
-        print("Evaluate Legibility results:")
+        timer.tick("Evaluate legibility results")
         try:
             if legible_dict is None:
                  with open(full_legibile_path, 'r') as openfile:
@@ -445,15 +474,15 @@ def soccer_net_pipeline(args):
         except Exception as e:
             print(e)
             success = False
-        print("Done evaluating legibility")
+        timer.tick("Done evaluating legibility")
 
 
     #4. generate json for pose-estimation
     if args.pipeline['pose'] and success:
-        if _resume_skip(force, resume, _pose_output_ok(), 'pose (JSON + ViTPose inference)'):
+        if _resume_skip(force, resume, _pose_output_ok(), 'pose (JSON + ViTPose inference)', timer):
             pass
         else:
-            print("Generating json for pose")
+            timer.tick("Generating json for pose")
             try:
                 if legible_dict is None:
                     with open(full_legibile_path, 'r') as openfile:
@@ -463,7 +492,7 @@ def soccer_net_pipeline(args):
             except Exception as e:
                 print(e)
                 success = False
-            print("Done generating json for pose")
+            timer.tick("Done generating json for pose")
 
             # 4.5 Alternatively generate json for pose for all images in test/train
             #generate_json_for_pose_estimator(args)
@@ -471,7 +500,7 @@ def soccer_net_pipeline(args):
 
             #5. run pose estimation and store results
             if success:
-                print("Detecting pose", flush=True)
+                timer.tick("Detecting pose (ViTPose subprocess)")
                 if shutil.which("conda"):
                     command = (
                         f"conda run --no-capture-output -n {config.pose_env} python pose.py "
@@ -486,14 +515,14 @@ def soccer_net_pipeline(args):
                         f"{config.pose_home}/checkpoints/vitpose-h.pth --img-root / --json-file {input_json} "
                         f"--out-json {output_json}"
                     )
-                success = _run_shell_with_updates('ViTPose (pose.py)', command)
-                print("Done detecting pose", flush=True)
+                success = _run_shell_with_updates('ViTPose (pose.py)', command, timer=timer)
+                timer.tick("Done detecting pose")
 
 
     #6. generate cropped images
     if args.pipeline['crops'] and success:
-        if not _resume_skip(force, resume, _crops_exist(), 'torso crop generation'):
-            print("Generate crops")
+        if not _resume_skip(force, resume, _crops_exist(), 'torso crop generation', timer):
+            timer.tick("Generate crops")
             try:
                 Path(crops_destination_dir).mkdir(parents=True, exist_ok=True)
                 if legible_results is None:
@@ -517,12 +546,12 @@ def soccer_net_pipeline(args):
             except Exception as e:
                 print(e)
                 success = False
-            print("Done generating crops")
+            timer.tick("Done generating crops")
 
     #7. run STR system on all crops
     if args.pipeline['str'] and success:
-        if not _resume_skip(force, resume, os.path.isfile(str_result_file), 'STR (PARSeq inference)'):
-            print("Predict numbers")
+        if not _resume_skip(force, resume, os.path.isfile(str_result_file), 'STR (PARSeq inference)', timer):
+            timer.tick("Predict numbers (STR)")
             crops_data_root = os.path.join(
                 config.dataset['SoccerNet']['working_dir'],
                 config.dataset['SoccerNet'][args.part]['crops_folder'],
@@ -540,12 +569,19 @@ def soccer_net_pipeline(args):
                     f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file} "
                     f"--min_str_confidence={min_str}"
                 )
-            success = _run_shell_with_updates('STR / PARSeq inference', command)
-            print("Done predict numbers")
+            success = _run_shell_with_updates('STR / PARSeq inference', command, timer=timer)
+            if success:
+                timer.tick("Done predict numbers (STR)")
+            else:
+                timer.tick(
+                    f"STR failed — in conda env '{config.str_env}' run: "
+                    f"pip install lmdb  (and str/parseq: pip install -r requirements/core.txt; pip install -e .). "
+                    f"Or set configuration.str_env to an env with torch + strhub + lmdb."
+                )
 
     #str_result_file = os.path.join(config.dataset['SoccerNet']['working_dir'], "val_jersey_id_predictions.json")
     if args.pipeline['combine'] and success:
-        if _resume_skip(force, resume, os.path.isfile(final_results_path), 'tracklet combine / final_results.json'):
+        if _resume_skip(force, resume, os.path.isfile(final_results_path), 'tracklet combine / final_results.json', timer):
             pass
         else:
             #8. combine tracklet results (proposal: digit-wise logits or confidence-weighted aggregation)
@@ -565,9 +601,11 @@ def soccer_net_pipeline(args):
 
             with open(final_results_path, 'w') as f:
                 json.dump(consolidated_dict, f)
+            timer.tick("Wrote final_results / consolidated tracklet predictions")
 
     if args.pipeline['eval'] and success:
         #9. evaluate accuracy
+        timer.tick("Evaluate tracklet accuracy vs ground truth")
         if consolidated_dict is None:
             with open(final_results_path, 'r') as f:
                 consolidated_dict = json.load(f)
@@ -575,6 +613,9 @@ def soccer_net_pipeline(args):
             gt_dict = json.load(gf)
         print(len(consolidated_dict.keys()), len(gt_dict.keys()))
         helpers.evaluate_results(consolidated_dict, gt_dict, full_results = analysis_results)
+        timer.tick("SoccerNet pipeline finished")
+    elif success:
+        timer.tick("SoccerNet pipeline finished (eval step disabled)")
 
 
 if __name__ == '__main__':

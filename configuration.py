@@ -2,6 +2,8 @@ pose_home = 'pose/ViTPose'
 pose_env = 'vitpose'
 
 str_home = 'str/parseq/'
+# Conda env used for `python str.py` (PARSeq). Needs torch, strhub, and lmdb (strhub imports lmdb even for inference).
+# Install from repo: cd str/parseq && pip install -r requirements/core.txt && pip install -e .
 str_env = 'parseq2'
 str_platform = 'cu113'
 
