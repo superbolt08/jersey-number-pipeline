@@ -53,7 +53,11 @@ def main() -> int:
     if _have_mmcv():
         return 0
 
+    # Important: `pkg_resources` comes from setuptools. If pip uses build isolation,
+    # some environments end up missing it during "get requirements to build wheel".
+    # We install setuptools/wheel here and later disable build isolation to avoid that.
     _run_pip(["-U", "pip", "setuptools", "wheel"], quiet=True)
+    _run_pip(["-U", "setuptools"], quiet=True)
 
     print("Trying openmim + mim install mmcv-full==1.7.2 ...", flush=True)
     _run_pip(["-U", "openmim"], quiet=True)
@@ -94,7 +98,7 @@ def main() -> int:
             url = f"https://download.openmmlab.com/mmcv/dist/{cu}/torch{torch_ver}/index.html"
             print("Trying prebuilt index:", url, flush=True)
             code = _run_pip(
-                ["mmcv-full==1.7.2", "-f", url],
+                ["mmcv-full==1.7.2", "-f", url, "--no-build-isolation"],
                 quiet=False,
                 timeout=900,
             )
@@ -112,7 +116,14 @@ def main() -> int:
     _run_pip(["ninja", "packaging"], quiet=True)
     try:
         code = subprocess.call(
-            [sys.executable, "-m", "pip", "install", "mmcv-full==1.7.2"],
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "mmcv-full==1.7.2",
+                "--no-build-isolation",
+            ],
             env=env,
             timeout=3600,
         )
