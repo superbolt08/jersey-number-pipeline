@@ -74,9 +74,17 @@ To run the full inference pipeline for SoccerNet:
 ```
 python3 main.py SoccerNet test
 ```
+To resume a partially completed SoccerNet run (skip steps whose outputs already exist):
+```
+python3 main.py SoccerNet test --resume
+```
 To run legibility and jersey number inference for hockey:
 ```
 python3 main.py Hockey test
+```
+To evaluate predictions against SoccerNet test ground truth:
+```
+python evaluate.py --pred "out/SoccerNetResults/final_results.json" --gt "data/SoccerNet/jersey-2023/test/test_gt.json"
 ```
 Update actions in main.py actions list to run steps selectively.
 
