@@ -16,6 +16,31 @@ ssh -i "C:\Users\SyedS\Documents\UBCO Courses\COSC419\project\ssh keys\yes" -p <
 
 If you see `Permission denied (publickey)`, it means your key wasn’t accepted by the server (wrong key path, wrong username, or different key than the one instance expects).
 
+## 0b) One-shot setup script (Linux VM)
+
+From **inside the VM** (after SSH), you can run an idempotent script that does most of **sections 1–6** (clone, venv, pip, sub-repos, `mmcv`, optional `rclone` dataset + weights). It **skips steps already done**.
+
+```bash
+# Script lives in the repo; it will clone into ~/projects/jersey-number-pipeline if missing.
+mkdir -p ~/projects
+cd ~/projects
+git clone https://github.com/superbolt08/jersey-number-pipeline.git 2>/dev/null || true
+cd jersey-number-pipeline
+git pull
+chmod +x scripts/setup_vast_gpu_environment.sh
+
+# Example: pull zips from rclone, unzip under data/SoccerNet/jersey-2023/
+export RCLONE_REMOTE=gdrive
+export RCLONE_ZIPS_PATH='jersey-number-pipeline/jersey-number-pipeline/data/SoccerNet/jersey-2023'
+export DATASET_SOURCE=rclone_zips
+# Optional: sync a Drive folder that mirrors repo weights layout (models/, reid/, pose/, ...)
+# export RCLONE_WEIGHTS_PATH='jersey-number-pipeline/weights'
+
+./scripts/setup_vast_gpu_environment.sh
+```
+
+See `scripts/setup_vast_gpu_environment.sh` header for all `DATASET_SOURCE` modes and env vars.
+
 ## 1) Get the repo on the VM
 
 ```bash
