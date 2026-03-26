@@ -11,7 +11,12 @@ sys.path.append(str(ROOT))  # add ROOT to PATH
 from argparse import ArgumentParser
 
 import torch
-from xtcocotools.coco import COCO
+
+# xtcocotools has no reliable Py3.12 wheels; pycocotools exposes the same COCO API for this script.
+try:
+    from xtcocotools.coco import COCO
+except ImportError:
+    from pycocotools.coco import COCO
 
 try:
     from tqdm import tqdm

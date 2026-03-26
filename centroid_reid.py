@@ -3,12 +3,96 @@ import sys
 import os
 import json
 import argparse
+import re
 
-ROOT = './reid/centroids-reid/'
-sys.path.append(str(ROOT))  # add ROOT to PATH
+# Absolute path + insert at front so `import datasets` resolves to centroids-reid/datasets/,
+# not Hugging Face `datasets` from site-packages (Colab has both).
+_ROOT_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), 'reid', 'centroids-reid')
+)
+sys.path.insert(0, _ROOT_DIR)
+ROOT = _ROOT_DIR + os.sep
+
+
+def _patch_centroids_reid_for_pl2():
+    """Upstream centroids-reid targets PL 1.x; patch vendored files for PyTorch Lightning 2.x."""
+    root = os.path.normpath(ROOT)
+
+    def _write_if_changed(path, old, new, skip_if):
+        if not os.path.isfile(path):
+            return
+        try:
+            text = open(path, encoding='utf-8').read()
+        except OSError:
+            return
+        if skip_if(text):
+            return
+        if old not in text:
+            return
+        try:
+            open(path, 'w', encoding='utf-8').write(text.replace(old, new, 1))
+        except OSError:
+            pass
+
+    _write_if_changed(
+        os.path.join(root, 'utils', 'misc.py'),
+        'from pytorch_lightning.utilities.seed import seed_everything',
+        (
+            'try:\n'
+            '    from pytorch_lightning.utilities.seed import seed_everything\n'
+            'except ImportError:\n'
+            '    from lightning_fabric.utilities.seed import seed_everything'
+        ),
+        lambda t: 'lightning_fabric.utilities.seed' in t,
+    )
+    _write_if_changed(
+        os.path.join(root, 'callbacks', 'chechpointer_callback.py'),
+        'from pytorch_lightning.callbacks.base import Callback',
+        'from pytorch_lightning.callbacks import Callback',
+        lambda t: 'pytorch_lightning.callbacks import Callback' in t and 'callbacks.base' not in t,
+    )
+    # PL 2.x: self.hparams has no setter; only save_hyperparameters(...) is allowed.
+    _bases = os.path.join(root, 'modelling', 'bases.py')
+    if os.path.isfile(_bases):
+        try:
+            _bt = open(_bases, encoding='utf-8').read()
+        except OSError:
+            pass
+        else:
+            if 'save_hyperparameters(AttributeDict(hparams))' in _bt and 'self.hparams = AttributeDict(hparams)' not in _bt:
+                pass
+            else:
+                _new_bt, _n = re.subn(
+                    r'^([ \t]*)self\.hparams = AttributeDict\(hparams\)\s*\n[ \t]*self\.save_hyperparameters\(self\.hparams\)',
+                    r'\1self.save_hyperparameters(AttributeDict(hparams))',
+                    _bt,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+                if _n:
+                    try:
+                        open(_bases, 'w', encoding='utf-8').write(_new_bt)
+                    except OSError:
+                        pass
+
+
+_patch_centroids_reid_for_pl2()
 
 import numpy as np
 import torch
+
+# PyTorch 2.6+ defaults torch.load(weights_only=True). Lightning .ckpt files need full pickle
+# (callbacks, etc.); trust only checkpoints you placed in reid/centroids-reid/models/.
+_orig_torch_load = torch.load
+
+
+def _torch_load_for_pl_ckpt(*args, **kwargs):
+    kwargs["weights_only"] = False
+    return _orig_torch_load(*args, **kwargs)
+
+
+torch.load = _torch_load_for_pl_ckpt
+
 from tqdm import tqdm
 import cv2
 from PIL import Image

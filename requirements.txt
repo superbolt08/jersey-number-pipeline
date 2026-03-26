@@ -22,3 +22,7 @@ scipy
 # Utilities
 tqdm
 gdown
+
+# ViTPose / mmpose (pose.py) — COCO JSON. Use pycocotools (wheels incl. Py3.12); xtcocotools
+# often lacks cp312 wheels and breaks `pip install -r` on Colab. pose.py falls back if needed.
+pycocotools
