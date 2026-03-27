@@ -118,6 +118,24 @@ python3 main.py SoccerNet train --train_str
 
 Trained model will be under str/parseq/outputs.
 
+### Mini Ablation: Baseline vs Confidence-Weighted Training
+From `str/parseq/`, first score pseudo-label consistency and export per-sample weights:
+```
+python tools/score_lmdb_consistency.py ../../models/parseq_epoch=24-step=2575-val_accuracy=95.6044-val_NED=96.3255.ckpt --data_root ../../data/SoccerNet/jersey-2023/lmdb --output_json ../../out/SoccerNetResults/train/sample_weights_v1.json --device cuda
+```
+Optional: softer disagreement penalty for weighting experiments:
+```
+python tools/score_lmdb_consistency.py ../../models/parseq_epoch=24-step=2575-val_accuracy=95.6044-val_NED=96.3255.ckpt --data_root ../../data/SoccerNet/jersey-2023/lmdb --output_json ../../out/SoccerNetResults/train/sample_weights_v2_dm05.json --device cuda --disagree_multiplier 0.5
+```
+Baseline training (no weights, single GPU):
+```
+python train.py +experiment=parseq dataset=real data.root_dir=../../data/SoccerNet/jersey-2023/lmdb pretrained=null trainer.accelerator=gpu trainer.devices=1 trainer.max_epochs=25 trainer.val_check_interval=1.0 data.batch_size=128 data.max_label_length=2 model.max_label_length=2 data.num_workers=8
+```
+Confidence-weighted training:
+```
+python train.py +experiment=parseq dataset=real data.root_dir=../../data/SoccerNet/jersey-2023/lmdb pretrained=null trainer.accelerator=gpu trainer.devices=1 trainer.max_epochs=25 trainer.val_check_interval=1.0 data.batch_size=128 data.max_label_length=2 model.max_label_length=2 data.num_workers=8 data.train_weights_path=../../out/SoccerNetResults/train/sample_weights_v1.json
+```
+
 ## Citation
 ```
 @InProceedings{Koshkina_2024_CVPR,
