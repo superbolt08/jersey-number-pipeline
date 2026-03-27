@@ -146,12 +146,17 @@ clone_subrepo() {
   local dir="$1"
   local url="$2"
   mkdir -p "$(dirname "${dir}")"
-  if [[ ! -e "${dir}/.git" ]]; then
-    log "git clone ${url} → ${dir}"
-    git clone --recurse-submodules "${url}" "${dir}"
-  else
+  if [[ -e "${dir}/.git" ]]; then
     log "Subrepo exists: ${dir} (skip)"
+    return 0
   fi
+  # Leftover folder (e.g. failed clone, copied stub) blocks `git clone`
+  if [[ -d "${dir}" ]]; then
+    log "Removing non-repo path so clone can run: ${dir}"
+    rm -rf "${dir}"
+  fi
+  log "git clone ${url} → ${dir}"
+  git clone --recurse-submodules "${url}" "${dir}"
 }
 
 patch_vitpose_mmcv_cap() {
