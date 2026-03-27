@@ -67,7 +67,48 @@ Download and place under jersey-number-pipeline/models/.
 
 
 ## Configuration:
-Update configuration.py if required to set custom path to data or dependencies. 
+Update configuration.py if required to set custom path to data or dependencies.
+
+## Changes in this fork (COSC 419 proposal and tooling)
+
+The table below summarizes extensions relative to the upstream Koshkina et al. baseline. Toggle behavior mainly via `configuration.proposal` and related keys.
+
+| The change | Where it is | Why it was made |
+|------------|-------------|-----------------|
+| Central **proposal** settings: combine mode, STR threshold, tracklet confidence floor, legibility gate for crops, color filter on/off | `configuration.py` (`proposal`, `legibility_train_*`) | Single place to align the pipeline with the course proposal (confidence gating, digit-wise combine, crop quality). |
+| **Digit-wise** tracklet aggregation from STR logits | `main.py` (combine step), `helpers.py` (`process_jersey_id_predictions_bayesian`, `predict_jersey_number`) | Combine frames using per-digit likelihoods instead of only whole-number voting, as proposed for generalization. |
+| **Confidence-weighted** class aggregation and low-confidence frame drop at tracklet level | `helpers.py` (`find_best_prediction`, `process_jersey_id_predictions`) | Reduces impact of blurry or occluded frames when `combine_mode` is `confidence_weighted`. |
+| Skip **low-confidence** crops before recording STR outputs | `str.py` (`run_inference`), `main.py` (`--min_str_confidence`) | Cuts noise into PARSeq and unnecessary work; matches SoccerNet-style confidence gating from the literature review. |
+| **Stricter legibility** threshold when building crops (uses saved per-image scores) | `main.py` (`get_soccer_net_legibility_results`, legibility JSON), `helpers.py` (`generate_crops`) | Ensures torso crops sent to STR are more likely to contain readable numbers. |
+| **HSV-style color filtering** on crops | `helpers.py` (`color_filter_jersey_digits`) | Emphasize digit-like colors before STR, as sketched in the proposal preprocessing section. |
+| **Training-time augmentations** (rotation, color jitter, optional blur) | `jersey_number_dataset.py` | Simulate motion and lighting variation on jersey crops without a separate offline clone-20% dataset step. |
+| **25 epochs, lr 0.001, momentum 0.85** for legibility training defaults | `configuration.py`, `legibility_classifier.py` | Match proposal section 3.2 hyperparameters where training is run from this repo. |
+| **PARSeq training** epoch default | `main.py` (`train_parseq`, `trainer.max_epochs=25`) | Keep STR fine-tuning schedule consistent with the proposal’s epoch count. |
+| **Per-image legibility scores** persisted to JSON | `main.py`, `configuration.py` / dataset `working_dir` | Feed crop gating and make legibility debugging reproducible. |
+| **Step timing and unbuffered subprocess output** | `main.py` (`_StepTimer`, `_run_shell_with_updates`) | Long GPU runs give clearer progress; addresses replication feedback issues noted in the proposal. |
+| **Resume** pipeline stages when outputs already exist | `main.py` (`--resume`, `--force`) | Faster iteration on SoccerNet without redoing finished stages. |
+| **Nested SoccerNet jersey-2023 paths** for classifiers | `helpers.py`, `legibility_classifier.py`, `number_classifier.py` | Match current dataset layout under `train/` / `test/`. |
+| **ViTPose / Colab install helpers** and Lightning 2 patches for Re-ID | `colab/`, `scripts/install_mmcv_full_vitpose.py`, `centroid_reid.py`, `scripts/patch_centroids_reid_lightning2.py` | End-to-end runs on Colab and modern dependency stacks. |
+| **GPU VM setup** (e.g. rented cloud GPUs) | `scripts/setup_vast_gpu_environment.sh`, `GPU_RENTAL_STEPS.md` | One-shot Linux environment setup for remote GPUs. |
+| **Windows / CPU / Python 3.12** compatibility (e.g. COCO tools, conda vs plain `python`) | `requirements.txt`, `pose.py`, `main.py`, `str.py`, etc. | Allow local development and platforms without NVIDIA CUDA. |
+| **`gdown` and Drive downloads** | `requirements.txt`, `setup.py` | Fetch Google Drive checkpoints and assets during setup or in notebooks. |
+| **SAM checked out as `sam2/`** | `setup.py`, `legibility_classifier.py`, `colab/`, `scripts/setup_vast_gpu_environment.sh` | Keeps SAM alongside the repo and avoids import/name clashes; matches Colab and rental-VM docs. |
+| **Tracklet lists = subdirectories only** (ignore `.DS_Store` and other files) | `main.py` (`_tracklet_dir_names`), `gaussian_outliers.py`, `centroid_reid.py`, `helpers.py` (`consolidated_results`) | Stops non-folders from breaking filtering, Re-ID, and final consolidation on macOS/Windows. |
+| **Optional SoccerNet tracklet subset** | `configuration.py` (`soccer_net_max_tracklets`), `main.py`, `centroid_reid.py`, `gaussian_outliers.py`, `helpers.identify_soccer_balls` (`allowed_tracklets`) | Run smoke tests or partial splits without processing every track folder. |
+| **ViTPose mmcv range patch** | `scripts/patch_vitpose_mmpose_mmcv_range.py` | Relaxes mmcv upper bounds when upstream ViTPose/mmpose pins block install. |
+| **Kaggle notebook** | `colab/kaggle.ipynb` | Mirror of Colab-style setup for Kaggle kernels. |
+| **PARSeq / `strhub` extra deps** | `str/parseq/requirements/core.txt`, `str/parseq/requirements/inference.txt` | Adds `lmdb` and inference pins so `python str.py` works in a minimal env. |
+| **PARSeq env naming documented** | `configuration.py` (`str_env`, `str_platform`, comments) | Clarifies which conda env and CUDA tag the STR step expects. |
+| **Centroid-ReID import path and `torch.load` for `.ckpt`** | `centroid_reid.py` | Resolves `datasets` and loads Lightning 2 checkpoints from different working directories. |
+| **Updated PyTorch stack in requirements** | `requirements.txt` | Moves beyond paper-era torch 1.9 for current GPUs and wheels. |
+| **`pycocotools` for pose COCO API** | `requirements.txt`, `pose.py` | Replaces `xtcocotools` where builds fail (e.g. Python 3.12). |
+| **Safer directory creation in bootstrap** | `setup.py` | Uses `os.makedirs(..., exist_ok=True)` when creating model dirs. |
+| **`.gitignore` updates** | `.gitignore` | Excludes local data, caches, and OS junk from commits. |
+| **COSC 419 proposal PDF** | `docs/COSC 419 Project Proposal - Group 4.docx.pdf` | Course submission artifact for the team. |
+| **Extended setup guide** | `docs/README.md` | Colab-first walkthrough, Drive layout, and weight paths for this fork. |
+| **`GPU_RENTAL_STEPS.md`** | repo root | Human-readable checklist complementing the Vast setup shell script. |
+
+For Colab-focused instructions, see `docs/README.md`.
 
 ## Inference:
 To run the full inference pipeline for SoccerNet:
