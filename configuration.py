@@ -21,6 +21,8 @@ proposal = {
     'min_tracklet_frame_confidence': 0.15,  # exclude frames below this when aggregating tracklet prediction
     'min_legibility_score_for_crop': 0.5,  # stricter pre-crop gate using raw legibility scores (<= legibility threshold)
     'use_color_filter_on_crops': True,
+    'crop_width_scale': 1.00,  # horizontal torso crop scale; try 1.15 / 1.30 to include wider jersey context ( will try after running letterbox pad first)
+    'str_letterbox_pad': True,  # preserve crop aspect ratio by black padding before PARSeq resize
 }
 
 # Legibility training defaults from proposal §3.2 (used when training legibility_classifier)

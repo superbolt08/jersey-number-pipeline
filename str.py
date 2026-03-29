@@ -27,6 +27,7 @@ sys.path.append(str(ROOT))  # add ROOT to PATH
 import torch
 from torch import nn, optim
 from torch.nn import functional as F
+from torchvision import transforms as T
 
 from tqdm import tqdm
 
@@ -78,9 +79,9 @@ def run_inference(model, data_root, result_file, img_size, min_str_confidence=0.
     filenames.sort()
     results = {}
     skipped_low_conf = 0
+    transform = _get_inference_transform(img_size, letterbox_pad=args_letterbox_pad)
     for filename in tqdm(filenames):
         image = Image.open(os.path.join(file_dir, filename)).convert('RGB')
-        transform = SceneTextDataModule.get_transform(img_size)
         image = transform(image)
         image = image.unsqueeze(0)
         logits = model.forward(image.to(model.device))
@@ -112,9 +113,9 @@ def run_inference_with_temperature(model, data_root, img_size):
     filenames = os.listdir(file_dir)
     filenames.sort()
     results = {}
+    transform = _get_inference_transform(img_size, letterbox_pad=args_letterbox_pad)
     for filename in filenames:
         image = Image.open(os.path.join(file_dir, filename)).convert('RGB')
-        transform = SceneTextDataModule.get_transform(img_size)
         image = transform(image)
         image = image.unsqueeze(0)
         logits = model.forward(image.to(model.device))
@@ -154,10 +155,10 @@ def set_temperature(model, data_root, img_size):
         data[k] = v
 
     myKeys = list(data.keys())
+    transform = _get_inference_transform(img_size, letterbox_pad=args_letterbox_pad)
     with torch.no_grad():
         for filename in myKeys:
             image = Image.open(os.path.join(file_dir, filename)).convert('RGB')
-            transform = SceneTextDataModule.get_transform(img_size)
             image = transform(image)
             image = image.unsqueeze(0)
             l = model.forward(image.to(model.device))
@@ -186,6 +187,35 @@ def set_temperature(model, data_root, img_size):
     print('After temperature - ECE: %.3f' % ( after_temperature_ece))
 
     return model
+
+
+def _letterbox_resize_pil(image, target_hw):
+    target_h, target_w = int(target_hw[0]), int(target_hw[1])
+    src_w, src_h = image.size
+    if src_w <= 0 or src_h <= 0:
+        return image.resize((target_w, target_h), Image.BICUBIC)
+    scale = min(target_w / src_w, target_h / src_h)
+    new_w = max(1, int(round(src_w * scale)))
+    new_h = max(1, int(round(src_h * scale)))
+    resized = image.resize((new_w, new_h), Image.BICUBIC)
+    canvas = Image.new("RGB", (target_w, target_h), (0, 0, 0))
+    paste_x = (target_w - new_w) // 2
+    paste_y = (target_h - new_h) // 2
+    canvas.paste(resized, (paste_x, paste_y))
+    return canvas
+
+
+def _get_inference_transform(img_size, letterbox_pad=False):
+    if letterbox_pad:
+        return T.Compose([
+            T.Lambda(lambda img: _letterbox_resize_pil(img, img_size)),
+            T.ToTensor(),
+            T.Normalize(0.5, 0.5),
+        ])
+    return SceneTextDataModule.get_transform(img_size)
+
+
+args_letterbox_pad = False
 
 
 class _ECELoss(nn.Module):
@@ -242,6 +272,7 @@ class _ECELoss(nn.Module):
 
 @torch.inference_mode()
 def main():
+    global args_letterbox_pad
     parser = argparse.ArgumentParser()
     parser.add_argument('checkpoint', help="Model checkpoint (or 'pretrained=<model_id>')")
     parser.add_argument('--data_root', default='data')
@@ -264,7 +295,10 @@ def main():
     parser.add_argument('--result_file', default='outputs/preds.json')
     parser.add_argument('--min_str_confidence', type=float, default=0.0,
                         help='Skip STR on crops whose product of token confidences is below this threshold.')
+    parser.add_argument('--letterbox_pad', action='store_true', default=False,
+                        help='Apply black letterbox padding to preserve aspect ratio before resize.')
     args, unknown = parser.parse_known_args()
+    args_letterbox_pad = args.letterbox_pad
     kwargs = parse_model_args(unknown)
 
     charset_test = string.digits # + string.ascii_lowercase

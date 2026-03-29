@@ -551,6 +551,7 @@ def soccer_net_pipeline(args):
                     legibility_scores=legibility_scores,
                     min_legibility_score=prop['min_legibility_score_for_crop'],
                     use_color_filter=prop['use_color_filter_on_crops'],
+                    crop_width_scale=prop.get('crop_width_scale', 1.0),
                 )
             except Exception as e:
                 print(e)
@@ -566,17 +567,18 @@ def soccer_net_pipeline(args):
                 config.dataset['SoccerNet'][args.part]['crops_folder'],
             )
             min_str = config.proposal['min_str_frame_confidence']
+            letterbox_arg = ' --letterbox_pad' if config.proposal.get('str_letterbox_pad', False) else ''
             if shutil.which("conda"):
                 command = (
                     f"conda run --no-capture-output -n {config.str_env} python str.py {config.dataset['SoccerNet']['str_model']} "
                     f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file} "
-                    f"--min_str_confidence={min_str}"
+                    f"--min_str_confidence={min_str}{letterbox_arg}"
                 )
             else:
                 command = (
                     f"python str.py {config.dataset['SoccerNet']['str_model']} "
                     f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file} "
-                    f"--min_str_confidence={min_str}"
+                    f"--min_str_confidence={min_str}{letterbox_arg}"
                 )
             success = _run_shell_with_updates('STR / PARSeq inference', command, timer=timer)
             if success:

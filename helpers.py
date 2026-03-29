@@ -165,7 +165,8 @@ def generate_crops_from_detections(det_path, crops_destination_dir, legible_resu
 
 # crop torso based on joints and save cropped images
 def generate_crops(json_file, crops_destination_dir, legible_results, all_legible = None,
-                   legibility_scores=None, min_legibility_score=0.0, use_color_filter=False):
+                   legibility_scores=None, min_legibility_score=0.0, use_color_filter=False,
+                   crop_width_scale=1.0):
     if all_legible is None:
         all_legible = []
         for key in legible_results.keys():
@@ -209,6 +210,11 @@ def generate_crops(json_file, crops_destination_dir, legible_results, all_legibl
         height, width, _ = img.shape
         x_min = min([p[0] for p  in filtered_points]) - PADDING
         x_max = max([p[0] for p  in filtered_points]) + PADDING
+        if crop_width_scale != 1.0:
+            base_w = max(1.0, float(x_max - x_min))
+            expand = 0.5 * base_w * (float(crop_width_scale) - 1.0)
+            x_min -= expand
+            x_max += expand
         y_min = min([p[1] for p  in filtered_points]) - PADDING
         y_max = max([p[1] for p  in filtered_points])
         x1 = int(0 if x_min < 0 else x_min)
