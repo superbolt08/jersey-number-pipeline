@@ -84,5 +84,22 @@ Conclusion: this preprocessing strongly harms current STR performance and should
 
 ---
 
+## Experiment Group E: Pose-Based Crop Width Expansion
+
+Goal: include wider torso context to reduce missed digits from overly narrow crops.
+
+Change:
+- Added `crop_width_scale` in `configuration.py` and wired it into `helpers.generate_crops(...)`.
+
+Tried:
+- `crop_width_scale = 1.15` (with `str_letterbox_pad=False`)
+
+Result:
+- Test accuracy: **83.65%** (lower than baseline 85.38%).
+
+Conclusion: widening crops to 1.15 did not improve performance in this test.
+
+---
+
 
 
