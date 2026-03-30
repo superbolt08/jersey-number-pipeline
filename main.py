@@ -387,7 +387,11 @@ def soccer_net_pipeline(args):
 
     tracklet_subset = None
     subset_file = ''
-    mtl = getattr(config, 'soccer_net_max_tracklets', None)
+    mtl = getattr(args, 'max_tracklets', None)
+    if mtl is not None and mtl <= 0:
+        mtl = None
+    if mtl is None:
+        mtl = getattr(config, 'soccer_net_max_tracklets', None)
     if mtl is not None:
         all_dirs = sorted(
             d for d in os.listdir(image_dir)
@@ -613,6 +617,16 @@ if __name__ == '__main__':
         action='store_true',
         default=False,
         help="SoccerNet only: re-run every stage even if outputs exist (overrides --resume).",
+    )
+    parser.add_argument(
+        '--max-tracklets',
+        type=int,
+        default=None,
+        metavar='N',
+        help=(
+            "SoccerNet only: process only the first N tracklet folders under images/ (sorted by name). "
+            "Overrides configuration.soccer_net_max_tracklets when N > 0. If omitted or N <= 0, the config value is used."
+        ),
     )
     args = parser.parse_args()
 

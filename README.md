@@ -109,6 +109,11 @@ To resume a partially completed SoccerNet run (skip steps whose outputs already 
 ```
 python3 main.py SoccerNet test --resume
 ```
+To run on only the first N tracklet folders (sorted names; good for quick tests):
+```
+python main.py SoccerNet test --max-tracklets 50
+```
+(Does the same as `soccer_net_max_tracklets` in `configuration.py` when set, but this flag overrides the config.)
 To run legibility and jersey number inference for hockey:
 ```
 python3 main.py Hockey test

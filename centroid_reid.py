@@ -4,6 +4,7 @@ import os
 import json
 import argparse
 import re
+import inspect
 
 # Absolute path + insert at front so `import datasets` resolves to centroids-reid/datasets/,
 # not Hugging Face `datasets` from site-packages (Colab has both).
@@ -87,7 +88,14 @@ _orig_torch_load = torch.load
 
 
 def _torch_load_for_pl_ckpt(*args, **kwargs):
-    kwargs["weights_only"] = False
+    # PyTorch 2.6+ defaults weights_only=True; Lightning .ckpt needs full pickle → False when supported.
+    # PyTorch 1.x / early 2.x: no weights_only param — passing it reaches pickle.Unpickler and raises.
+    kwargs.pop("weights_only", None)
+    try:
+        if "weights_only" in inspect.signature(_orig_torch_load).parameters:
+            kwargs["weights_only"] = False
+    except (TypeError, ValueError):
+        pass
     return _orig_torch_load(*args, **kwargs)
 
 
