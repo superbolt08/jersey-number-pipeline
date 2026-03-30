@@ -486,12 +486,12 @@ if __name__ == '__main__':
             else:
                 model_ft = train_model_with_sam(model_ft, criterion, optimizer_ft, num_epochs=10)
         else:
-            optimizer_ft = optim.SGD(model_ft.parameters(), lr=0.001, momentum=0.9)
+            optimizer_ft = optim.SGD(model_ft.parameters(), lr=0.001, momentum=0.85)
 
             # Decay LR by a factor of 0.1 every 7 epochs
             exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
             model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
-                                   num_epochs=10)
+                                   num_epochs=25)
 
         timestr = time.strftime("%Y%m%d-%H%M%S")
         save_model_path = f"./experiments/legibility_{args.arch}_{timestr}.pth"
