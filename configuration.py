@@ -16,6 +16,9 @@ reid_home = 'reid/'
 # Limit SoccerNet pipeline to the first N tracklet folders (sorted by name), per split. None = all tracklets.
 soccer_net_max_tracklets = None
 
+# Exclude STR frames below this confidence product when aggregating per-tracklet class scores.
+min_tracklet_frame_confidence = 0.15
+
 dataset = {'SoccerNet':
                 {'root_dir': './data/SoccerNet/jersey-2023',
                  'working_dir': './out/SoccerNetResults',
