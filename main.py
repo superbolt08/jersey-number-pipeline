@@ -150,7 +150,6 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
         kept = set(tracklets)
         tracklets = [t for t in tracklet_ids if t in kept]
 
-    legibility_scores = {}
     for directory in tqdm(tracklets):
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
@@ -158,27 +157,18 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
         else:
             images = os.listdir(track_dir)
         images_full_path = [os.path.join(track_dir, x) for x in images]
-        track_results, track_raw = lc.run(
+        track_results = lc.run(
             images_full_path,
             config.dataset['SoccerNet']['legibility_model'],
             arch=config.dataset['SoccerNet']['legibility_model_arch'],
             threshold=0.5,
-            return_raw_scores=True,
         )
-        for p, s in zip(images_full_path, track_raw):
-            legibility_scores[p] = float(s)
-            legibility_scores[os.path.basename(p)] = float(s)
         legible = list(np.nonzero(track_results))[0]
         if len(legible) == 0:
             illegible_tracklets.append(directory)
         else:
             legible_images = [images_full_path[i] for i in legible]
             legible_tracklets[directory] = legible_images
-
-    scores_name = config.dataset['SoccerNet'][args.part].get('legibility_scores', 'legibility_scores.json')
-    legibility_scores_path = os.path.join(config.dataset['SoccerNet']['working_dir'], scores_name)
-    with open(legibility_scores_path, 'w') as out_scores:
-        json.dump(legibility_scores, out_scores)
 
     # save results
     json_object = json.dumps(legible_tracklets, indent=4)
@@ -248,13 +238,13 @@ def train_parseq(args):
         if shutil.which("conda"):
             command = (
                 f"conda run --no-capture-output -n {config.str_env} python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         else:
             command = (
                 f"python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         success = _run_shell_with_updates('PARSeq training (Hockey)', command)
@@ -269,13 +259,13 @@ def train_parseq(args):
         if shutil.which("conda"):
             command = (
                 f"conda run --no-capture-output -n {config.str_env} python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         else:
             command = (
                 f"python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         success = _run_shell_with_updates('PARSeq training (SoccerNet)', command)
@@ -537,20 +527,10 @@ def soccer_net_pipeline(args):
                 if legible_results is None:
                     with open(full_legibile_path, "r") as outfile:
                         legible_results = json.load(outfile)
-                scores_name = config.dataset['SoccerNet'][args.part].get('legibility_scores', 'legibility_scores.json')
-                legibility_scores_path = os.path.join(config.dataset['SoccerNet']['working_dir'], scores_name)
-                legibility_scores = None
-                if os.path.isfile(legibility_scores_path):
-                    with open(legibility_scores_path, 'r') as sf:
-                        legibility_scores = json.load(sf)
-                prop = config.proposal
                 helpers.generate_crops(
                     output_json,
                     crops_destination_dir,
                     legible_results,
-                    legibility_scores=legibility_scores,
-                    min_legibility_score=prop['min_legibility_score_for_crop'],
-                    use_color_filter=prop['use_color_filter_on_crops'],
                 )
             except Exception as e:
                 print(e)
@@ -565,18 +545,15 @@ def soccer_net_pipeline(args):
                 config.dataset['SoccerNet']['working_dir'],
                 config.dataset['SoccerNet'][args.part]['crops_folder'],
             )
-            min_str = config.proposal['min_str_frame_confidence']
             if shutil.which("conda"):
                 command = (
                     f"conda run --no-capture-output -n {config.str_env} python str.py {config.dataset['SoccerNet']['str_model']} "
-                    f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file} "
-                    f"--min_str_confidence={min_str}"
+                    f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file}"
                 )
             else:
                 command = (
                     f"python str.py {config.dataset['SoccerNet']['str_model']} "
-                    f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file} "
-                    f"--min_str_confidence={min_str}"
+                    f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file}"
                 )
             success = _run_shell_with_updates('STR / PARSeq inference', command, timer=timer)
             if success:
@@ -593,17 +570,10 @@ def soccer_net_pipeline(args):
         if _resume_skip(force, resume, os.path.isfile(final_results_path), 'tracklet combine / final_results.json', timer):
             pass
         else:
-            #8. combine tracklet results (proposal: digit-wise logits or confidence-weighted aggregation)
-            prop = config.proposal
-            mfc = prop['min_tracklet_frame_confidence']
-            if prop['combine_mode'] == 'digit_wise':
-                results_dict, analysis_results = helpers.process_jersey_id_predictions_bayesian(
-                    str_result_file, useTS=False, useBias=True, useTh=False
-                )
-            else:
-                results_dict, analysis_results = helpers.process_jersey_id_predictions(
-                    str_result_file, useBias=True, min_frame_confidence=mfc
-                )
+            #8. combine tracklet results
+            results_dict, analysis_results = helpers.process_jersey_id_predictions(
+                str_result_file, useBias=True, min_frame_confidence=0.0
+            )
 
             # add illegible tracklet predictions
             consolidated_dict = consolidated_results(image_dir, results_dict, illegible_path, soccer_ball_list=soccer_ball_list)

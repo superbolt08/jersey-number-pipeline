@@ -69,23 +69,13 @@ Download and place under jersey-number-pipeline/models/.
 ## Configuration:
 Update configuration.py if required to set custom path to data or dependencies.
 
-## Changes in this fork (COSC 419 proposal and tooling)
+## Changes in this fork (tooling and setup)
 
-The table below summarizes extensions relative to the upstream Koshkina et al. baseline. Toggle behavior mainly via `configuration.proposal` and related keys.
+The table below summarizes extensions relative to the upstream Koshkina et al. baseline. **Code locations** for each item are listed in the **Where it is** column (paths are relative to the repo root unless noted).
 
 | The change | Where it is | Why it was made |
 |------------|-------------|-----------------|
-| Central **proposal** settings: combine mode, STR threshold, tracklet confidence floor, legibility gate for crops, color filter on/off | `configuration.py` (`proposal`, `legibility_train_*`) | Single place to align the pipeline with the course proposal (confidence gating, digit-wise combine, crop quality). |
-| **Digit-wise** tracklet aggregation from STR logits | `main.py` (combine step), `helpers.py` (`process_jersey_id_predictions_bayesian`, `predict_jersey_number`) | Combine frames using per-digit likelihoods instead of only whole-number voting, as proposed for generalization. |
-| **Confidence-weighted** class aggregation and low-confidence frame drop at tracklet level | `helpers.py` (`find_best_prediction`, `process_jersey_id_predictions`) | Reduces impact of blurry or occluded frames when `combine_mode` is `confidence_weighted`. |
-| Skip **low-confidence** crops before recording STR outputs | `str.py` (`run_inference`), `main.py` (`--min_str_confidence`) | Cuts noise into PARSeq and unnecessary work; matches SoccerNet-style confidence gating from the literature review. |
-| **Stricter legibility** threshold when building crops (uses saved per-image scores) | `main.py` (`get_soccer_net_legibility_results`, legibility JSON), `helpers.py` (`generate_crops`) | Ensures torso crops sent to STR are more likely to contain readable numbers. |
-| **HSV-style color filtering** on crops | `helpers.py` (`color_filter_jersey_digits`) | Emphasize digit-like colors before STR, as sketched in the proposal preprocessing section. |
-| **Training-time augmentations** (rotation, color jitter, optional blur) | `jersey_number_dataset.py` | Simulate motion and lighting variation on jersey crops without a separate offline clone-20% dataset step. |
-| **25 epochs, lr 0.001, momentum 0.85** for legibility training defaults | `configuration.py`, `legibility_classifier.py` | Match proposal section 3.2 hyperparameters where training is run from this repo. |
-| **PARSeq training** epoch default | `main.py` (`train_parseq`, `trainer.max_epochs=25`) | Keep STR fine-tuning schedule consistent with the proposal’s epoch count. |
-| **Per-image legibility scores** persisted to JSON | `main.py`, `configuration.py` / dataset `working_dir` | Feed crop gating and make legibility debugging reproducible. |
-| **Step timing and unbuffered subprocess output** | `main.py` (`_StepTimer`, `_run_shell_with_updates`) | Long GPU runs give clearer progress; addresses replication feedback issues noted in the proposal. |
+| **Step timing and unbuffered subprocess output** | `main.py` (`_StepTimer`, `_run_shell_with_updates`) | Long GPU runs give clearer progress during replication and debugging. |
 | **Resume** pipeline stages when outputs already exist | `main.py` (`--resume`, `--force`) | Faster iteration on SoccerNet without redoing finished stages. |
 | **Nested SoccerNet jersey-2023 paths** for classifiers | `helpers.py`, `legibility_classifier.py`, `number_classifier.py` | Match current dataset layout under `train/` / `test/`. |
 | **ViTPose / Colab install helpers** and Lightning 2 patches for Re-ID | `colab/`, `scripts/install_mmcv_full_vitpose.py`, `centroid_reid.py`, `scripts/patch_centroids_reid_lightning2.py` | End-to-end runs on Colab and modern dependency stacks. |

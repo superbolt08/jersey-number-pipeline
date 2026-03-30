@@ -164,8 +164,7 @@ def generate_crops_from_detections(det_path, crops_destination_dir, legible_resu
         cv2.imwrite(os.path.join(crops_destination_dir, base_name), crop)
 
 # crop torso based on joints and save cropped images
-def generate_crops(json_file, crops_destination_dir, legible_results, all_legible = None,
-                   legibility_scores=None, min_legibility_score=0.0, use_color_filter=False):
+def generate_crops(json_file, crops_destination_dir, legible_results, all_legible = None):
     if all_legible is None:
         all_legible = []
         for key in legible_results.keys():
@@ -183,14 +182,6 @@ def generate_crops(json_file, crops_destination_dir, legible_results, all_legibl
         img_name = entry["img_name"]
 
         if not os.path.basename(img_name) in all_legible:
-            continue
-        if min_legibility_score > 0 and _lookup_legibility_score(legibility_scores, img_name) < min_legibility_score:
-            tr = os.path.basename(img_name).split('_')[0]
-            if tr not in skipped.keys():
-                skipped[tr] = 1
-            else:
-                skipped[tr] += 1
-            misses += 1
             continue
         if len(filtered_points) == 0:
             #TODO: better approach then skipping
@@ -229,8 +220,7 @@ def generate_crops(json_file, crops_destination_dir, legible_results, all_legibl
             continue
         saved.append(img_name)
         name = os.path.basename(img_name)
-        out_img = color_filter_jersey_digits(crop) if use_color_filter else crop
-        cv2.imwrite(os.path.join(crops_destination_dir, name), out_img)
+        cv2.imwrite(os.path.join(crops_destination_dir, name), crop)
     print(f"skipped {misses} out of {len(all_poses)}")
     return skipped, saved
 
@@ -255,27 +245,6 @@ def get_bias(value):
 
 SUM_THRESHOLD = 1
 FILTER_THRESHOLD = 0.2
-
-
-def color_filter_jersey_digits(bgr):
-    """CLAHE on L channel to emphasize jersey digits before STR."""
-    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
-    l_ch, a_ch, b_ch = cv2.split(lab)
-    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-    l2 = clahe.apply(l_ch)
-    merged = cv2.merge((l2, a_ch, b_ch))
-    return cv2.cvtColor(merged, cv2.COLOR_LAB2BGR)
-
-
-def _lookup_legibility_score(legibility_scores, img_name):
-    if not legibility_scores:
-        return 1.0
-    if img_name in legibility_scores:
-        return float(legibility_scores[img_name])
-    base = os.path.basename(img_name)
-    if base in legibility_scores:
-        return float(legibility_scores[base])
-    return 1.0
 
 
 def find_best_prediction(results, useBias=False, min_frame_confidence=0.0):
@@ -390,124 +359,6 @@ def apply_ts(logits):
     conf0 = softmax(raw[0])
     conf1 = softmax(raw[1])
     return [conf0, conf1]
-
-
-def initialize_priors(useBias, num_digits=11):
-    """ Initialize uniform priors for each digit in both positions. """
-    if not useBias:
-        return np.full(num_digits, 1.0 / num_digits), np.full(num_digits, 1.0 / num_digits)
-    else:
-        return np.full(num_digits, 1.0 / num_digits), np.array(bias_for_digits)
-
-def update_posteriors(priors, likelihoods):
-    """ Update posterior probabilities based on the likelihoods (model outputs). """
-    tens_priors, units_priors = priors
-    tens_likelihood, units_likelihood = likelihoods
-
-    # Update tens position
-    tens_posterior = tens_priors * tens_likelihood
-    tens_posterior /= np.sum(tens_posterior)
-
-    # Update units position
-    units_posterior = units_priors * units_likelihood
-    units_posterior /= np.sum(units_posterior)
-
-    return tens_posterior, units_posterior
-
-def split_predictions_by_digit(image_predictions, priors=None):
-    tens_likelihoods = []
-    units_likelihoods = []
-    for entry in image_predictions:
-        e0 = entry[0]
-        e1 = entry[1]
-        if not (priors is None):
-            e0, e1 = update_posteriors(priors, (e0, e1))
-        tens_likelihoods.append(e0)
-        units_likelihoods.append(e1)
-
-    return np.array(tens_likelihoods), np.array(units_likelihoods)
-
-def predict_jersey_number(image_predictions, useBias=False):
-    """
-    Predict the jersey number based on a sequence of image predictions.
-    image_predictions: List of predictions for each image,
-                       where each prediction is a tuple of two arrays
-                       (tens and units likelihoods, each of size 10).
-    """
-    tens_priors, units_priors = initialize_priors(useBias)
-
-    # use sum of log-likelihoods
-    tens_likelihoods, units_likelihoods = split_predictions_by_digit(image_predictions, priors=(tens_priors, units_priors))
-
-    # if useBias:
-    #     units_likelihoods = units_likelihoods * bias_for_digits
-
-    log_likelihoods_tens = np.log(tens_likelihoods)
-    sum_logl_tens = np.sum(log_likelihoods_tens, axis=0)
-    log_likelihoods_units = np.log(units_likelihoods)
-    sum_logl_units = np.sum(log_likelihoods_units, axis=0)
-
-    tens_digit = np.argmax(sum_logl_tens)
-    units_digit = np.argmax(sum_logl_units)
-
-    prob_tens = sum_logl_tens[tens_digit]
-    prob_units = sum_logl_units[units_digit]
-
-    batch_tokens = token_list[tens_digit] + token_list[units_digit]
-    batch_probs = [prob_tens, prob_units]
-    for i in range(2):
-        if batch_tokens[i] == 'E':
-            batch_tokens = batch_tokens[:i]
-            batch_probs = batch_probs[:i]
-            break
-
-    return batch_tokens, batch_probs
-
-
-def process_jersey_id_predictions_bayesian(file_path, useTS = False, useBias = False, useTh = False):
-    all_results = {}
-    final_results = {}
-    with open(file_path, 'r') as f:
-        results_dict = json.load(f)
-    for name in results_dict.keys():
-        tmp = name.split('_')
-        tracklet = tmp[0]
-
-        if tracklet not in all_results:
-            all_results[tracklet] = []
-            final_results[tracklet] = -1  # default
-        if not useTS:
-            raw_result = results_dict[name]['raw']
-            #raw_result = calibrate_and_apply_bias_raw(raw_result)
-            raw_result = np.array([np.array(xi) for xi in raw_result])
-        else:
-            raw_result = results_dict[name]['logits']
-            raw_result = apply_ts(raw_result)
-            #raw_result = apply_bias(raw_result)
-
-        all_results[tracklet].append(raw_result)
-
-    final_full_results = {}
-    for tracklet in all_results.keys():
-        if len(all_results[tracklet]) == 0:
-            continue
-        results = np.array(all_results[tracklet])
-
-        best_prediction, probs = predict_jersey_number(results, useBias=useBias)
-
-        # best_prediction, all_unique, weights = find_best_prediction_with_vector(results)
-        label_str = _parse_jersey_string_from_tokens(best_prediction)
-        prob = probs[0] if len(probs) == 1 else probs[0] + probs[1]
-        if useTh and prob < -850:
-                final_results[tracklet] = '-1'
-                final_full_results[tracklet] = {'label': '-1', 'unique': [],
-                                                'weights': probs}
-        else:
-            final_results[tracklet] = label_str
-            final_full_results[tracklet] = {'label': label_str, 'unique': [],
-                                        'weights': probs}
-
-    return final_results, final_full_results
 
 def process_jersey_id_predictions_raw(file_path, useTS = False ):
     all_results = {}

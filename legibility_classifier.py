@@ -26,7 +26,7 @@ if os.path.isdir(_sam_dir) and _sam_dir not in sys.path:
     sys.path.insert(0, _sam_dir)
 from sam import SAM
 
-def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
+def train_model(model, criterion, optimizer, scheduler, num_epochs=10):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -96,7 +96,7 @@ def train_model(model, criterion, optimizer, scheduler, num_epochs=25):
     model.load_state_dict(best_model_wts)
     return model
 
-def train_model_with_sam(model, criterion, optimizer, num_epochs=25, ):
+def train_model_with_sam(model, criterion, optimizer, num_epochs=10, ):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -208,7 +208,7 @@ def run_full_validation(model, dataloader):
     return correct/total
 
 
-def train_model_with_sam_and_full_val(model, criterion, optimizer, num_epochs=25):
+def train_model_with_sam_and_full_val(model, criterion, optimizer, num_epochs=10):
     since = time.time()
 
     best_model_wts = copy.deepcopy(model.state_dict())
@@ -479,19 +479,19 @@ if __name__ == '__main__':
         if args.sam:
             # Observe that all parameters are being optimized
             base_optimizer = torch.optim.SGD
-            optimizer_ft = SAM(model_ft.parameters(), base_optimizer, lr=cfg.legibility_train_lr, momentum=cfg.legibility_train_momentum)
+            optimizer_ft = SAM(model_ft.parameters(), base_optimizer, lr=0.001, momentum=0.9)
 
             if use_full_validation:
                 model_ft = train_model_with_sam_and_full_val(model_ft, criterion, optimizer_ft, num_epochs=10)
             else:
                 model_ft = train_model_with_sam(model_ft, criterion, optimizer_ft, num_epochs=10)
         else:
-            optimizer_ft = optim.SGD(model_ft.parameters(), lr=cfg.legibility_train_lr, momentum=cfg.legibility_train_momentum)
+            optimizer_ft = optim.SGD(model_ft.parameters(), lr=0.001, momentum=0.9)
 
             # Decay LR by a factor of 0.1 every 7 epochs
             exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft, step_size=7, gamma=0.1)
             model_ft = train_model(model_ft, criterion, optimizer_ft, exp_lr_scheduler,
-                                   num_epochs=25)
+                                   num_epochs=10)
 
         timestr = time.strftime("%Y%m%d-%H%M%S")
         save_model_path = f"./experiments/legibility_{args.arch}_{timestr}.pth"
