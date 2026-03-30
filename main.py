@@ -238,13 +238,13 @@ def train_parseq(args):
         if shutil.which("conda"):
             command = (
                 f"conda run --no-capture-output -n {config.str_env} python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         else:
             command = (
                 f"python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         success = _run_shell_with_updates('PARSeq training (Hockey)', command)
@@ -259,13 +259,13 @@ def train_parseq(args):
         if shutil.which("conda"):
             command = (
                 f"conda run --no-capture-output -n {config.str_env} python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         else:
             command = (
                 f"python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         success = _run_shell_with_updates('PARSeq training (SoccerNet)', command)
