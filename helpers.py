@@ -163,8 +163,21 @@ def generate_crops_from_detections(det_path, crops_destination_dir, legible_resu
 
         cv2.imwrite(os.path.join(crops_destination_dir, base_name), crop)
 
+
+def _lookup_legibility_score(legibility_scores, img_name):
+    if not legibility_scores:
+        return 1.0
+    if img_name in legibility_scores:
+        return float(legibility_scores[img_name])
+    base = os.path.basename(img_name)
+    if base in legibility_scores:
+        return float(legibility_scores[base])
+    return 1.0
+
+
 # crop torso based on joints and save cropped images
-def generate_crops(json_file, crops_destination_dir, legible_results, all_legible = None):
+def generate_crops(json_file, crops_destination_dir, legible_results, all_legible=None,
+                     legibility_scores=None, min_legibility_score=0.0):
     if all_legible is None:
         all_legible = []
         for key in legible_results.keys():
@@ -182,6 +195,14 @@ def generate_crops(json_file, crops_destination_dir, legible_results, all_legibl
         img_name = entry["img_name"]
 
         if not os.path.basename(img_name) in all_legible:
+            continue
+        if min_legibility_score > 0 and _lookup_legibility_score(legibility_scores, img_name) < min_legibility_score:
+            tr = os.path.basename(img_name).split('_')[0]
+            if tr not in skipped.keys():
+                skipped[tr] = 1
+            else:
+                skipped[tr] += 1
+            misses += 1
             continue
         if len(filtered_points) == 0:
             #TODO: better approach then skipping

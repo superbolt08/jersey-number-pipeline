@@ -16,6 +16,9 @@ reid_home = 'reid/'
 # Limit SoccerNet pipeline to the first N tracklet folders (sorted by name), per split. None = all tracklets.
 soccer_net_max_tracklets = None
 
+# Drop legible frames whose raw legibility score is below this before saving torso crops (see legibility_scores JSON).
+min_legibility_score_for_crop = 0.5
+
 dataset = {'SoccerNet':
                 {'root_dir': './data/SoccerNet/jersey-2023',
                  'working_dir': './out/SoccerNetResults',
@@ -28,6 +31,7 @@ dataset = {'SoccerNet':
                         'sim_filtered': 'test/main_subject_0.4.json',
                         'gauss_filtered': 'test/main_subject_gauss_th=3.5_r=3.json',
                         'legible_result': 'legible.json',
+                        'legibility_scores': 'legibility_scores.json',
                         'raw_legible_result': 'raw_legible_resnet34.json',
                         'pose_input_json': 'pose_input.json',
                         'pose_output_json': 'pose_results.json',
@@ -56,6 +60,7 @@ dataset = {'SoccerNet':
                      'feature_output_folder': 'out/SoccerNetResults/train',
                      'illegible_result': 'illegible_train.json',
                      'legible_result': 'legible_train.json',
+                     'legibility_scores': 'legibility_scores_train.json',
                      'soccer_ball_list': 'soccer_ball_train.json',
                      'sim_filtered': 'train/main_subject_0.4.json',
                      'gauss_filtered': 'train/main_subject_gauss_th=3.5_r=3.json',
@@ -72,6 +77,7 @@ dataset = {'SoccerNet':
                         'sim_filtered': 'challenge/main_subject_0.4.json',
                         'gauss_filtered': 'challenge/main_subject_gauss_th=3.5_r=3.json',
                         'legible_result': 'challenge_legible.json',
+                        'legibility_scores': 'legibility_scores_challenge.json',
                         'pose_input_json': 'challenge_pose_input.json',
                         'pose_output_json': 'challenge_pose_results.json',
                         'crops_folder': 'challenge_crops',

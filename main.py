@@ -531,10 +531,19 @@ def soccer_net_pipeline(args):
                 if legible_results is None:
                     with open(full_legibile_path, "r") as outfile:
                         legible_results = json.load(outfile)
+                scores_name = config.dataset['SoccerNet'][args.part].get('legibility_scores', 'legibility_scores.json')
+                legibility_scores_path = os.path.join(config.dataset['SoccerNet']['working_dir'], scores_name)
+                legibility_scores = None
+                if os.path.isfile(legibility_scores_path):
+                    with open(legibility_scores_path, 'r') as sf:
+                        legibility_scores = json.load(sf)
+                min_ls = float(getattr(config, 'min_legibility_score_for_crop', 0.0))
                 helpers.generate_crops(
                     output_json,
                     crops_destination_dir,
                     legible_results,
+                    legibility_scores=legibility_scores,
+                    min_legibility_score=min_ls,
                 )
             except Exception as e:
                 print(e)
