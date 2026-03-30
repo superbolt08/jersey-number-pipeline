@@ -531,10 +531,12 @@ def soccer_net_pipeline(args):
                 if legible_results is None:
                     with open(full_legibile_path, "r") as outfile:
                         legible_results = json.load(outfile)
+                use_cf = bool(getattr(config, 'use_color_filter_on_crops', False))
                 helpers.generate_crops(
                     output_json,
                     crops_destination_dir,
                     legible_results,
+                    use_color_filter=use_cf,
                 )
             except Exception as e:
                 print(e)

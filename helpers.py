@@ -163,8 +163,19 @@ def generate_crops_from_detections(det_path, crops_destination_dir, legible_resu
 
         cv2.imwrite(os.path.join(crops_destination_dir, base_name), crop)
 
+def color_filter_jersey_digits(bgr):
+    """CLAHE on L channel to emphasize jersey digits before STR."""
+    lab = cv2.cvtColor(bgr, cv2.COLOR_BGR2LAB)
+    l_ch, a_ch, b_ch = cv2.split(lab)
+    clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
+    l2 = clahe.apply(l_ch)
+    merged = cv2.merge((l2, a_ch, b_ch))
+    return cv2.cvtColor(merged, cv2.COLOR_LAB2BGR)
+
+
 # crop torso based on joints and save cropped images
-def generate_crops(json_file, crops_destination_dir, legible_results, all_legible = None):
+def generate_crops(json_file, crops_destination_dir, legible_results, all_legible=None,
+                     use_color_filter=False):
     if all_legible is None:
         all_legible = []
         for key in legible_results.keys():
@@ -220,7 +231,8 @@ def generate_crops(json_file, crops_destination_dir, legible_results, all_legibl
             continue
         saved.append(img_name)
         name = os.path.basename(img_name)
-        cv2.imwrite(os.path.join(crops_destination_dir, name), crop)
+        out_img = color_filter_jersey_digits(crop) if use_color_filter else crop
+        cv2.imwrite(os.path.join(crops_destination_dir, name), out_img)
     print(f"skipped {misses} out of {len(all_poses)}")
     return skipped, saved
 

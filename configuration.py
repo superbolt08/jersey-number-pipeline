@@ -16,6 +16,9 @@ reid_home = 'reid/'
 # Limit SoccerNet pipeline to the first N tracklet folders (sorted by name), per split. None = all tracklets.
 soccer_net_max_tracklets = None
 
+# Apply LAB + CLAHE enhancement to torso crops (highlights digit contrast; proposal HSV-style preprocessing).
+use_color_filter_on_crops = True
+
 dataset = {'SoccerNet':
                 {'root_dir': './data/SoccerNet/jersey-2023',
                  'working_dir': './out/SoccerNetResults',
