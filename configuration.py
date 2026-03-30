@@ -18,6 +18,7 @@ reid_home = 'reid/'
 proposal = {
     'combine_mode': 'digit_wise',  # 'digit_wise' (PARSeq logits per digit) or 'confidence_weighted'
     'min_str_frame_confidence': 0.12,  # product of token confidences; skip STR below this (SoccerNet-style gating)
+    'str_inference_batch_size': 32,  # STR inference throughput knob; increase until near GPU memory limit
     'min_tracklet_frame_confidence': 0.15,  # exclude frames below this when aggregating tracklet prediction
     'min_legibility_score_for_crop': 0.5,  # stricter pre-crop gate using raw legibility scores (<= legibility threshold)
     'use_color_filter_on_crops': True,

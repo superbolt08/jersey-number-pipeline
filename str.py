@@ -71,32 +71,47 @@ def print_results_table(results: List[Result], file=None):
           f'| {c.confidence:>10.2f} | {c.label_length:>12.2f} |', file=file)
 
 
-def run_inference(model, data_root, result_file, img_size, min_str_confidence=0.0):
+def run_inference(model, data_root, result_file, img_size, min_str_confidence=0.0, batch_size=1):
     # load images one by one, save paths and result
     file_dir = os.path.join(data_root, 'imgs')
     filenames = os.listdir(file_dir)
     filenames.sort()
     results = {}
     skipped_low_conf = 0
-    for filename in tqdm(filenames):
-        image = Image.open(os.path.join(file_dir, filename)).convert('RGB')
-        transform = SceneTextDataModule.get_transform(img_size)
-        image = transform(image)
-        image = image.unsqueeze(0)
-        logits = model.forward(image.to(model.device))
-        #convert to 3 by 10
-        probs_full = logits[:,:3,:11].softmax(-1)
+    batch_size = max(1, int(batch_size))
+    transform = SceneTextDataModule.get_transform(img_size)
+    for i in tqdm(range(0, len(filenames), batch_size)):
+        batch_filenames = filenames[i:i + batch_size]
+        images = []
+        for filename in batch_filenames:
+            image = Image.open(os.path.join(file_dir, filename)).convert('RGB')
+            image = transform(image)
+            images.append(image)
+        image_batch = torch.stack(images, dim=0)
+        logits = model.forward(image_batch.to(model.device))
+        # convert to B x 3 x 11
+        probs_full = logits[:, :3, :11].softmax(-1)
         preds, probs = model.tokenizer.decode(probs_full)
-        logits_out = logits[:,:3,:11].cpu().detach().numpy()[0].tolist()
-        probs_full = probs_full.cpu().detach().numpy()[0].tolist()
-        confidence = probs[0].cpu().detach().numpy().squeeze().tolist()
-        total_prob = 1.0
-        for x in confidence[:-1]:
-            total_prob *= float(x)
-        if min_str_confidence > 0 and total_prob < min_str_confidence:
-            skipped_low_conf += 1
-            continue
-        results[filename] = {'label':preds[0], 'confidence':confidence, 'raw': probs_full, 'logits': logits_out}
+        logits_out = logits[:, :3, :11].detach().cpu().numpy().tolist()
+        probs_out = probs_full.detach().cpu().numpy().tolist()
+
+        for j, filename in enumerate(batch_filenames):
+            confidence = probs[j].detach().cpu().numpy().squeeze().tolist()
+            if not isinstance(confidence, list):
+                confidence = [float(confidence)]
+            total_prob = 1.0
+            confidence_terms = confidence[:-1] if len(confidence) > 1 else confidence
+            for x in confidence_terms:
+                total_prob *= float(x)
+            if min_str_confidence > 0 and total_prob < min_str_confidence:
+                skipped_low_conf += 1
+                continue
+            results[filename] = {
+                'label': preds[j],
+                'confidence': confidence,
+                'raw': probs_out[j],
+                'logits': logits_out[j],
+            }
     if min_str_confidence > 0 and skipped_low_conf:
         print(f'STR: skipped {skipped_low_conf} crops below confidence {min_str_confidence}')
     with open(result_file, 'w') as f:
@@ -279,8 +294,14 @@ def main():
     hp = model.hparams
 
     if args.inference:
-        run_inference(model, args.data_root, args.result_file, hp.img_size,
-                      min_str_confidence=args.min_str_confidence)
+        run_inference(
+            model,
+            args.data_root,
+            args.result_file,
+            hp.img_size,
+            min_str_confidence=args.min_str_confidence,
+            batch_size=args.batch_size,
+        )
         exit()
     if args.tune_temperature:
         set_temperature(model, args.data_root, hp.img_size)
