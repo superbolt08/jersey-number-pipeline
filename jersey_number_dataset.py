@@ -11,6 +11,10 @@ data_transforms = {
     'train': {
         'resnet':
             transforms.Compose([
+            transforms.RandomGrayscale(),
+            transforms.ColorJitter(brightness=0.25, contrast=0.15, hue=0.15),
+            transforms.RandomRotation(degrees=8, fill=0),
+            transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 0.45))], p=0.25),
             transforms.Resize((256, 256)),
             transforms.ToTensor(),
             transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]) # Image Net
@@ -18,6 +22,10 @@ data_transforms = {
             ]),
         'vit':
             transforms.Compose([
+                transforms.RandomGrayscale(),
+                transforms.ColorJitter(brightness=0.25, contrast=0.15, hue=0.15),
+                transforms.RandomRotation(degrees=8, fill=0),
+                transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 0.45))], p=0.25),
                 transforms.Resize((224, 224)),
                 transforms.ToTensor(),
                 transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])  # Image Net
