@@ -150,6 +150,7 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
         kept = set(tracklets)
         tracklets = [t for t in tracklet_ids if t in kept]
 
+    legibility_scores = {}
     for directory in tqdm(tracklets):
         track_dir = os.path.join(path_to_images, directory)
         if use_filtered:
@@ -157,18 +158,27 @@ def get_soccer_net_legibility_results(args, use_filtered = False, filter = 'sim'
         else:
             images = os.listdir(track_dir)
         images_full_path = [os.path.join(track_dir, x) for x in images]
-        track_results = lc.run(
+        track_results, track_raw = lc.run(
             images_full_path,
             config.dataset['SoccerNet']['legibility_model'],
             arch=config.dataset['SoccerNet']['legibility_model_arch'],
             threshold=0.5,
+            return_raw_scores=True,
         )
+        for p, s in zip(images_full_path, track_raw):
+            legibility_scores[p] = float(s)
+            legibility_scores[os.path.basename(p)] = float(s)
         legible = list(np.nonzero(track_results))[0]
         if len(legible) == 0:
             illegible_tracklets.append(directory)
         else:
             legible_images = [images_full_path[i] for i in legible]
             legible_tracklets[directory] = legible_images
+
+    scores_name = config.dataset['SoccerNet'][args.part].get('legibility_scores', 'legibility_scores.json')
+    legibility_scores_path = os.path.join(config.dataset['SoccerNet']['working_dir'], scores_name)
+    with open(legibility_scores_path, 'w') as out_scores:
+        json.dump(legibility_scores, out_scores)
 
     # save results
     json_object = json.dumps(legible_tracklets, indent=4)
@@ -238,13 +248,13 @@ def train_parseq(args):
         if shutil.which("conda"):
             command = (
                 f"conda run --no-capture-output -n {config.str_env} python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         else:
             command = (
                 f"python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         success = _run_shell_with_updates('PARSeq training (Hockey)', command)
@@ -259,13 +269,13 @@ def train_parseq(args):
         if shutil.which("conda"):
             command = (
                 f"conda run --no-capture-output -n {config.str_env} python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         else:
             command = (
                 f"python train.py "
-                f"+experiment=parseq dataset=real data.root_dir={data_root} "
+                f"+experiment=parseq dataset=real data.root_dir={data_root} trainer.max_epochs=25 "
                 f"pretrained=parseq trainer.devices=1 trainer.val_check_interval=1 data.batch_size=128 data.max_label_length=2"
             )
         success = _run_shell_with_updates('PARSeq training (SoccerNet)', command)
