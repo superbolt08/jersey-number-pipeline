@@ -15,6 +15,7 @@
 import glob
 import io
 import logging
+import json
 import unicodedata
 from pathlib import Path, PurePath
 from typing import Callable, Optional, Union
@@ -56,11 +57,22 @@ class LmdbDataset(Dataset):
 
     def __init__(self, root: str, charset: str, max_label_len: int, min_image_dim: int = 0,
                  remove_whitespace: bool = True, normalize_unicode: bool = True,
-                 unlabelled: bool = False, transform: Optional[Callable] = None):
+                 unlabelled: bool = False, transform: Optional[Callable] = None,
+                 sample_weights_path: Optional[str] = None, return_sample_key: bool = False):
         self._env = None
-        self.root = root
+        self.root = str(Path(root).resolve())
         self.unlabelled = unlabelled
         self.transform = transform
+        self.min_image_dim = min_image_dim
+        self.return_sample_key = return_sample_key
+        self.sample_weights = {}
+        if sample_weights_path:
+            with open(sample_weights_path, 'r', encoding='utf-8') as wf:
+                payload = json.load(wf)
+            if isinstance(payload, dict) and 'weights' in payload and isinstance(payload['weights'], dict):
+                self.sample_weights = payload['weights']
+            elif isinstance(payload, dict):
+                self.sample_weights = payload
         self.labels = []
         self.filtered_index_list = []
         self.num_samples = self._preprocess_labels(charset, remove_whitespace, normalize_unicode,
@@ -134,4 +146,14 @@ class LmdbDataset(Dataset):
         if self.transform is not None:
             img = self.transform(img)
 
+        if self.sample_weights:
+            sample_key = self._sample_key(index)
+            weight = float(self.sample_weights.get(sample_key, 1.0))
+            return img, label, weight
+        if self.return_sample_key:
+            return img, label, self._sample_key(index)
         return img, label
+
+    def _sample_key(self, index: int) -> str:
+        root_norm = self.root.replace("\\", "/")
+        return f"{root_norm}::image-{index:09d}"

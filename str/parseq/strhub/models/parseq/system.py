@@ -226,7 +226,12 @@ class PARSeq(CrossEntropySystem):
         return content_mask, query_mask
 
     def training_step(self, batch, batch_idx) -> STEP_OUTPUT:
-        images, labels = batch
+        sample_weights = None
+        if len(batch) == 3:
+            images, labels, sample_weights = batch
+            sample_weights = sample_weights.to(self._device, dtype=torch.float32)
+        else:
+            images, labels = batch
         tgt = self.tokenizer.encode(labels, self._device)
 
         # Encode the source sequence (i.e. the image codes)
@@ -245,15 +250,31 @@ class PARSeq(CrossEntropySystem):
         for i, perm in enumerate(tgt_perms):
             tgt_mask, query_mask = self.generate_attn_masks(perm)
             out = self.decode(tgt_in, memory, tgt_mask, tgt_padding_mask, tgt_query_mask=query_mask)
-            logits = self.head(out).flatten(end_dim=1)
-            loss += n * F.cross_entropy(logits, tgt_out.flatten(), ignore_index=self.pad_id)
-            loss_numel += n
+            logits = self.head(out)
+            if sample_weights is None:
+                flat_logits = logits.flatten(end_dim=1)
+                loss += n * F.cross_entropy(flat_logits, tgt_out.flatten(), ignore_index=self.pad_id)
+                loss_numel += n
+            else:
+                per_token = F.cross_entropy(
+                    logits.flatten(end_dim=1),
+                    tgt_out.flatten(),
+                    ignore_index=self.pad_id,
+                    reduction='none',
+                ).reshape_as(tgt_out)
+                valid = (tgt_out != self.pad_id).to(per_token.dtype)
+                weighted_valid = valid * sample_weights.unsqueeze(1)
+                loss += (per_token * weighted_valid).sum()
+                loss_numel += weighted_valid.sum()
             # After the second iteration (i.e. done with canonical and reverse orderings),
             # remove the [EOS] tokens for the succeeding perms
             if i == 1:
                 tgt_out = torch.where(tgt_out == self.eos_id, self.pad_id, tgt_out)
                 n = (tgt_out != self.pad_id).sum().item()
-        loss /= loss_numel
+        if sample_weights is None:
+            loss /= loss_numel
+        else:
+            loss /= torch.clamp_min(loss_numel, 1e-6)
 
         self.log('loss', loss)
         return loss

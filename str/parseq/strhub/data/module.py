@@ -32,7 +32,8 @@ class SceneTextDataModule(pl.LightningDataModule):
     def __init__(self, root_dir: str, train_dir: str, img_size: Sequence[int], max_label_length: int,
                  charset_train: str, charset_test: str, batch_size: int, num_workers: int, augment: bool,
                  remove_whitespace: bool = True, normalize_unicode: bool = True,
-                 min_image_dim: int = 0, rotation: int = 0, collate_fn: Optional[Callable] = None):
+                 min_image_dim: int = 0, rotation: int = 0, collate_fn: Optional[Callable] = None,
+                 train_weights_path: Optional[str] = None):
         super().__init__()
         self.root_dir = root_dir
         self.train_dir = train_dir
@@ -48,6 +49,7 @@ class SceneTextDataModule(pl.LightningDataModule):
         self.min_image_dim = min_image_dim
         self.rotation = rotation
         self.collate_fn = collate_fn
+        self.train_weights_path = train_weights_path
         self._train_dataset = None
         self._val_dataset = None
 
@@ -73,7 +75,7 @@ class SceneTextDataModule(pl.LightningDataModule):
             root = PurePath(self.root_dir, 'train', self.train_dir)
             self._train_dataset = build_tree_dataset(root, self.charset_train, self.max_label_length,
                                                      self.min_image_dim, self.remove_whitespace, self.normalize_unicode,
-                                                     transform=transform)
+                                                     transform=transform, sample_weights_path=self.train_weights_path)
         return self._train_dataset
 
     @property
