@@ -71,12 +71,13 @@ def print_results_table(results: List[Result], file=None):
           f'| {c.confidence:>10.2f} | {c.label_length:>12.2f} |', file=file)
 
 
-def run_inference(model, data_root, result_file, img_size):
+def run_inference(model, data_root, result_file, img_size, min_str_confidence=0.0):
     # load images one by one, save paths and result
     file_dir = os.path.join(data_root, 'imgs')
     filenames = os.listdir(file_dir)
     filenames.sort()
     results = {}
+    skipped_low_conf = 0
     for filename in tqdm(filenames):
         image = Image.open(os.path.join(file_dir, filename)).convert('RGB')
         transform = SceneTextDataModule.get_transform(img_size)
@@ -89,7 +90,15 @@ def run_inference(model, data_root, result_file, img_size):
         logits_out = logits[:,:3,:11].cpu().detach().numpy()[0].tolist()
         probs_full = probs_full.cpu().detach().numpy()[0].tolist()
         confidence = probs[0].cpu().detach().numpy().squeeze().tolist()
+        total_prob = 1.0
+        for x in confidence[:-1]:
+            total_prob *= float(x)
+        if min_str_confidence > 0 and total_prob < min_str_confidence:
+            skipped_low_conf += 1
+            continue
         results[filename] = {'label':preds[0], 'confidence':confidence, 'raw': probs_full, 'logits': logits_out}
+    if min_str_confidence > 0 and skipped_low_conf:
+        print(f'STR: skipped {skipped_low_conf} crops below confidence {min_str_confidence}')
     with open(result_file, 'w') as f:
         json.dump(results, f)
 
@@ -253,6 +262,8 @@ def main():
     parser.add_argument('--tune_temperature', action='store_true', default=False,
                         help='Find best t-scale')
     parser.add_argument('--result_file', default='outputs/preds.json')
+    parser.add_argument('--min_str_confidence', type=float, default=0.0,
+                        help='Skip STR on crops whose product of token confidences is below this threshold.')
     args, unknown = parser.parse_known_args()
     kwargs = parse_model_args(unknown)
 
@@ -268,7 +279,8 @@ def main():
     hp = model.hparams
 
     if args.inference:
-        run_inference(model, args.data_root, args.result_file, hp.img_size)
+        run_inference(model, args.data_root, args.result_file, hp.img_size,
+                      min_str_confidence=args.min_str_confidence)
         exit()
     if args.tune_temperature:
         set_temperature(model, args.data_root, hp.img_size)

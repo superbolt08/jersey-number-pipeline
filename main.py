@@ -549,15 +549,18 @@ def soccer_net_pipeline(args):
                 config.dataset['SoccerNet']['working_dir'],
                 config.dataset['SoccerNet'][args.part]['crops_folder'],
             )
+            min_str = float(getattr(config, 'min_str_frame_confidence', 0.0))
             if shutil.which("conda"):
                 command = (
                     f"conda run --no-capture-output -n {config.str_env} python str.py {config.dataset['SoccerNet']['str_model']} "
-                    f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file}"
+                    f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file} "
+                    f"--min_str_confidence={min_str}"
                 )
             else:
                 command = (
                     f"python str.py {config.dataset['SoccerNet']['str_model']} "
-                    f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file}"
+                    f"--data_root={crops_data_root} --batch_size=1 --inference --result_file {str_result_file} "
+                    f"--min_str_confidence={min_str}"
                 )
             success = _run_shell_with_updates('STR / PARSeq inference', command, timer=timer)
             if success:
