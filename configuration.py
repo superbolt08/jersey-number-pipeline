@@ -45,6 +45,7 @@ dataset = {'SoccerNet':
                         'feature_output_folder': 'out/SoccerNetResults/val',
                         'illegible_result': 'illegible_val.json',
                         'legible_result': 'legible_val.json',
+                        'legibility_scores': 'legibility_scores_val.json',
                         'soccer_ball_list': 'soccer_ball_val.json',
                         'crops_folder': 'crops_val',
                         'sim_filtered': 'val/main_subject_0.4.json',
