@@ -52,7 +52,7 @@ class SceneTextDataModule(pl.LightningDataModule):
         self._val_dataset = None
 
     @staticmethod
-    def get_transform(img_size: Tuple[int], augment: bool = False, rotation: int = 0):
+    def get_transform(img_size: Tuple[int], augment: bool = True, rotation: int = 0):
         transforms = []
         if augment:
             from .augment import rand_augment_transform
@@ -69,7 +69,7 @@ class SceneTextDataModule(pl.LightningDataModule):
     @property
     def train_dataset(self):
         if self._train_dataset is None:
-            transform = self.get_transform(self.img_size, self.augment)
+            transform = self.get_transform(self.img_size, True)
             root = PurePath(self.root_dir, 'train', self.train_dir)
             self._train_dataset = build_tree_dataset(root, self.charset_train, self.max_label_length,
                                                      self.min_image_dim, self.remove_whitespace, self.normalize_unicode,
