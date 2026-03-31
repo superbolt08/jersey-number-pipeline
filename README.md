@@ -47,6 +47,15 @@ We include the version of the PARSeq code that was used to fine-tune the jersey 
 * [Original model weights](https://drive.google.com/file/d/1AK_GnM6pIYyfIf3tBYSKIyR3Fa3Z46Cx/view?usp=sharing)
 * [Hockey fine-tuned](https://drive.google.com/file/d/1FyM31xvSXFRusN0sZH0EWXoHwDfB9WIE/view?usp=sharing)
 * [SoccerNet fine-tuned](https://drive.google.com/file/d/1uRln22tlhneVt3P6MePmVxBWSLMsL3bm/view?usp=sharing)
+* [SoccerNet confidence-weighted v2 (disagree_multiplier=0.5)](https://drive.google.com/file/d/1t8lhPXG0W6z_NzDnlAtSP3rfY_UXVAC-/view?usp=sharing)
+
+Put the v2 checkpoint at:
+`models/parseq_weighted_v2_epoch29.ckpt`
+
+Fallback (original baseline checkpoint from Koshkina setup):
+`models/parseq_epoch=24-step=2575-val_accuracy=95.6044-val_NED=96.3255.ckpt`
+
+If the v2 file is missing on your machine, set `configuration.py` `SoccerNet -> str_model` to the fallback baseline checkpoint above.
 
 
 ## Data:
