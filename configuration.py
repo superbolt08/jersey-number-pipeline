@@ -17,7 +17,7 @@ reid_home = 'reid/'
 soccer_net_max_tracklets = None
 
 # Skip STR on crops whose product of token confidences is below this (SoccerNet inference only).
-min_str_frame_confidence = 0.12
+min_str_frame_confidence = 0.35
 
 dataset = {'SoccerNet':
                 {'root_dir': './data/SoccerNet/jersey-2023',
