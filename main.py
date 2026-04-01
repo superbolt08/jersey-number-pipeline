@@ -577,9 +577,9 @@ def soccer_net_pipeline(args):
         if _resume_skip(force, resume, os.path.isfile(final_results_path), 'tracklet combine / final_results.json', timer):
             pass
         else:
-            #8. combine tracklet results
-            results_dict, analysis_results = helpers.process_jersey_id_predictions(
-                str_result_file, useBias=True, min_frame_confidence=0.0
+            #8. combine tracklet results (digit-wise aggregation from STR position logits)
+            results_dict, analysis_results = helpers.process_jersey_id_predictions_bayesian(
+                str_result_file, useTS=False, useBias=True, useTh=False
             )
 
             # add illegible tracklet predictions
